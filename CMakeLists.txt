@@ -104,6 +104,7 @@ install(EXPORT WuTargets
 )
 
 add_executable(EchoServer examples/EchoServer.c)
+target_include_directories(EchoServer PUBLIC src/)
 target_link_libraries(EchoServer WuHost)
 
 set_target_properties(Wu WuHost EchoServer PROPERTIES
