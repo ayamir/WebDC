@@ -14,6 +14,8 @@ bash ./generate_clangd.sh # generate .clangd file for clangd-based editor
 
 ## Building
 
+Build passed on `openssl` `1.1.1w`.
+
 ```bash
 mkdir build && cd build
 cmake ..
