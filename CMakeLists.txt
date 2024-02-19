@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.7)
 project(WebUdp)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(OPENSSL_INCLUDE_DIR /usr/include/openssl-1.1/)
 set(OPENSSL_SSL_LIBRARY /usr/lib/openssl-1.1/libssl.so)
 set(OPENSSL_CRYPTO_LIBRARY /usr/lib/openssl-1.1/libcrypto.so)
