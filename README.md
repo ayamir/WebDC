@@ -1,9 +1,9 @@
 # WebUDP
 
-WebRTC datachannel library and server forked from [seemk/WebUDP](https://github.com/seemk/WebUDP).
+WebRTC datachannel library and server.
 
 The library implements a minimal subset of WebRTC to achieve unreliable and out of order UDP transfer for browser clients.
-See the [EchoServer](https://github.com/ayamir/WebUDP/blob/master/examples/EchoServer.c) for how to connect to the server from a browser.
+See the [EchoServer](https://github.com/ayamir/webdc/blob/master/examples/EchoServer.c) for how to connect to the server from a browser.
 The core library (Wu) is platform independent. Refer to `WuHostEpoll` or `WuHostNode` for platform-specific usage.
 
 ## Example
