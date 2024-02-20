@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
-project(WebUdp)
+project(WebDC)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(OPENSSL_INCLUDE_DIR /usr/include/openssl-1.1/)
@@ -20,7 +20,6 @@ if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
   message(FATAL_ERROR "Invalid OpenSSL version ${OPENSSL_VERSION}")
 endif()
 
-option(WITH_NODE "Build Node bindings" OFF)
 option(WITH_TESTS "Build tests" ON)
 
 set(EXAMPLES_DIR ${CMAKE_CURRENT_BINARY_DIR}/examples)
@@ -115,41 +114,6 @@ set_target_properties(Wu WuHost EchoServer PROPERTIES
 
 file(MAKE_DIRECTORY ${EXAMPLES_DIR})
 file(COPY examples/client DESTINATION ${EXAMPLES_DIR})
-
-if (WITH_NODE)
-  find_program(NPM npm)
-
-  if (NPM)
-    cmake_policy(SET CMP0070 NEW)
-
-    file (GENERATE OUTPUT binding.gyp
-      INPUT ${CMAKE_CURRENT_SOURCE_DIR}/binding.gyp.in
-    )
-
-    file (GENERATE OUTPUT package.json
-      INPUT ${CMAKE_CURRENT_SOURCE_DIR}/package.json
-    )
-
-    add_custom_target(node ALL
-      COMMAND npm install
-      COMMAND npm run configure
-      COMMAND npm run build
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    )
-
-    add_custom_command(TARGET node POST_BUILD
-      COMMAND ${CMAKE_COMMAND}
-        -E copy ${CMAKE_CURRENT_BINARY_DIR}/build/Release/WebUDP.node ${EXAMPLES_DIR}
-    )
-
-    add_dependencies(node Wu)
-
-    file(COPY examples/EchoServer.js DESTINATION ${EXAMPLES_DIR})
-  else()
-    message(WARNING "npm not found, skipping Node bindings")
-  endif()
-
-endif()
 
 if (WITH_TESTS)
   set(TESTS_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)

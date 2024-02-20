@@ -1,4 +1,4 @@
-# WebUDP
+# WebDC
 
 WebRTC datachannel library and server.
 

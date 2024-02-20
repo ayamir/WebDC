@@ -1,5 +1,6 @@
 #include "WuStun.h"
 #include "CRC32.h"
+#include "WuBufferOp.h"
 #include "WuCrypto.h"
 #include <arpa/inet.h>
 #include <string.h>

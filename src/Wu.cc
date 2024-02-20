@@ -1,5 +1,6 @@
 #include "Wu.h"
 #include "WuArena.h"
+#include "WuBufferOp.h"
 #include "WuClock.h"
 #include "WuCrypto.h"
 #include "WuMath.h"
@@ -9,7 +10,6 @@
 #include "WuSctp.h"
 #include "WuSdp.h"
 #include "WuStun.h"
-#include <assert.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>

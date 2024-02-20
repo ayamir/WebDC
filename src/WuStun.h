@@ -1,6 +1,5 @@
 #pragma once
 
-#include "WuBufferOp.h"
 #include "WuString.h"
 
 const int32_t kMaxStunIdentifierLength = 128;
