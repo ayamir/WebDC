@@ -8,7 +8,7 @@ The core library (Dc) is platform independent. Refer to `HostEpoll` for linux-pl
 
 ## Example
 
-![image-20240216132521221](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240216132521221.png)
+![image-20240220140659857](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240220140659857.png)
 
 ## Developing
 
