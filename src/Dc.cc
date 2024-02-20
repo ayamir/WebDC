@@ -281,13 +281,13 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
           rc.flags = kSctpFlagCompleteUnreliable;
           rc.length = SctpDataChunkLength(1);
 
-          auto *datachannel = &rc.as.data;
-          datachannel->tsn = client->tsn++;
-          datachannel->streamId = chunk->as.data.streamId;
-          datachannel->streamSeq = 0;
-          datachannel->protoId = DCProto_Control;
-          datachannel->userData = &outType;
-          datachannel->userDataLength = 1;
+          auto *chunkData = &rc.as.data;
+          chunkData->tsn = client->tsn++;
+          chunkData->streamId = chunk->as.data.streamId;
+          chunkData->streamSeq = 0;
+          chunkData->protoId = DCProto_Control;
+          chunkData->userData = &outType;
+          chunkData->userDataLength = 1;
 
           if (client->state != Client_DataChannelOpen) {
             client->state = Client_DataChannelOpen;
@@ -647,13 +647,13 @@ static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
   rc.flags = kSctpFlagCompleteUnreliable;
   rc.length = SctpDataChunkLength(length);
 
-  auto *datachannel = &rc.as.data;
-  datachannel->tsn = client->tsn++;
-  datachannel->streamId = 0; // TODO: Does it matter?
-  datachannel->streamSeq = 0;
-  datachannel->protoId = proto;
-  datachannel->userData = data;
-  datachannel->userDataLength = length;
+  auto *chunkData = &rc.as.data;
+  chunkData->tsn = client->tsn++;
+  chunkData->streamId = 0; // TODO: Does it matter?
+  chunkData->streamSeq = 0;
+  chunkData->protoId = proto;
+  chunkData->userData = data;
+  chunkData->userDataLength = length;
 
   SendSctp(dc, client, &packet, &rc, 1);
   return 0;
