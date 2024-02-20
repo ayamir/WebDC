@@ -1,40 +1,40 @@
-#include "Dc.h"
-#include "BarePool.h"
-#include "BufferOp.hpp"
-#include "Clock.h"
-#include "Crypto.h"
-#include "Math.h"
-#include "Pool.h"
-#include "Queue.h"
-#include "Rng.h"
-#include "Sctp.h"
-#include "Sdp.h"
-#include "Stun.h"
+#include "Wu.h"
+#include "WuArena.h"
+#include "WuClock.h"
+#include "WuCrypto.h"
+#include "WuMath.h"
+#include "WuPool.h"
+#include "WuQueue.h"
+#include "WuRng.h"
+#include "WuSctp.h"
+#include "WuSdp.h"
+#include "WuStun.h"
+#include <assert.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <string.h>
 
-struct Dc {
-  BarePool *bp;
+struct Wu {
+  WuArena *arena;
   double time;
   double dt;
   char host[256];
   uint16_t port;
-  Queue *pendingEvents;
+  WuQueue *pendingEvents;
   int32_t maxClients;
   int32_t numClients;
 
-  Pool *clientPool;
-  Client **clients;
+  WuPool *clientPool;
+  WuClient **clients;
   ssl_ctx_st *sslCtx;
 
   char certFingerprint[96];
 
   char errBuf[512];
   void *userData;
-  ErrorFn errorCallback;
-  WriteFn writeUdpData;
+  WuErrorFn errorCallback;
+  WuWriteFn writeUdpData;
 };
 
 const double kMaxClientTtl = 8.0;
@@ -42,7 +42,7 @@ const double heartbeatInterval = 4.0;
 const int kDefaultMTU = 1400;
 
 static void DefaultErrorCallback(const char *, void *) {}
-static void WriteNothing(const uint8_t *, size_t, const Client *, void *) {}
+static void WriteNothing(const uint8_t *, size_t, const WuClient *, void *) {}
 
 enum DataChannelMessageType { DCMessage_Ack = 0x02, DCMessage_Open = 0x03 };
 
@@ -66,12 +66,12 @@ struct DataChannelPacket {
   } as;
 };
 
-enum ClientState {
-  Client_Dead,
-  Client_WaitingRemoval,
-  Client_DTLSHandshake,
-  Client_SCTPEstablished,
-  Client_DataChannelOpen
+enum WuClientState {
+  WuClient_Dead,
+  WuClient_WaitingRemoval,
+  WuClient_DTLSHandshake,
+  WuClient_SCTPEstablished,
+  WuClient_DataChannelOpen
 };
 
 static int32_t ParseDataChannelControlPacket(const uint8_t *buf, size_t len,
@@ -80,17 +80,17 @@ static int32_t ParseDataChannelControlPacket(const uint8_t *buf, size_t len,
   return 0;
 }
 
-void ReportError(Dc *dc, const char *description) {
-  dc->errorCallback(description, dc->userData);
+void WuReportError(Wu *wu, const char *description) {
+  wu->errorCallback(description, wu->userData);
 }
 
-struct Client {
+struct WuClient {
   StunUserIdentifier serverUser;
   StunUserIdentifier serverPassword;
   StunUserIdentifier remoteUser;
   StunUserIdentifier remoteUserPassword;
-  Address address;
-  ClientState state;
+  WuAddress address;
+  WuClientState state;
   uint16_t localSctpPort;
   uint16_t remoteSctpPort;
   uint32_t sctpVerificationTag;
@@ -106,20 +106,20 @@ struct Client {
   void *user;
 };
 
-void ClientSetUserData(Client *client, void *user) { client->user = user; }
+void WuClientSetUserData(WuClient *client, void *user) { client->user = user; }
 
-void *ClientGetUserData(const Client *client) { return client->user; }
+void *WuClientGetUserData(const WuClient *client) { return client->user; }
 
-static void ClientFinish(Client *client) {
+static void WuClientFinish(WuClient *client) {
   SSL_free(client->ssl);
   client->ssl = NULL;
   client->inBio = NULL;
   client->outBio = NULL;
-  client->state = Client_Dead;
+  client->state = WuClient_Dead;
 }
 
-static void ClientStart(const Dc *dc, Client *client) {
-  client->state = Client_DTLSHandshake;
+static void WuClientStart(const Wu *wu, WuClient *client) {
+  client->state = WuClient_DTLSHandshake;
   client->remoteSctpPort = 0;
   client->sctpVerificationTag = 0;
   client->remoteTsn = 0;
@@ -128,7 +128,7 @@ static void ClientStart(const Dc *dc, Client *client) {
   client->nextHeartbeat = heartbeatInterval;
   client->user = NULL;
 
-  client->ssl = SSL_new(dc->sslCtx);
+  client->ssl = SSL_new(wu->sslCtx);
 
   client->inBio = BIO_new(BIO_s_mem());
   BIO_set_mem_eof_return(client->inBio, -1);
@@ -142,25 +142,27 @@ static void ClientStart(const Dc *dc, Client *client) {
   SSL_set_mtu(client->ssl, kDefaultMTU);
 }
 
-static void SendSctp(const Dc *dc, Client *client, const SctpPacket *packet,
-                     const SctpChunk *chunks, int32_t numChunks);
+static void WuSendSctp(const Wu *wu, WuClient *client, const SctpPacket *packet,
+                       const SctpChunk *chunks, int32_t numChunks);
 
-static Client *NewClient(Dc *dc) {
-  Client *client = (Client *)PoolAcquire(dc->clientPool);
+static WuClient *WuNewClient(Wu *wu) {
+  WuClient *client = (WuClient *)WuPoolAcquire(wu->clientPool);
 
   if (client) {
-    memset(client, 0, sizeof(Client));
-    ClientStart(dc, client);
-    dc->clients[dc->numClients++] = client;
+    memset(client, 0, sizeof(WuClient));
+    WuClientStart(wu, client);
+    wu->clients[wu->numClients++] = client;
     return client;
   }
 
-  return nullptr;
+  return NULL;
 }
 
-static void PushEvent(Dc *dc, Event evt) { QueuePush(dc->pendingEvents, &evt); }
+static void WuPushEvent(Wu *wu, WuEvent evt) {
+  WuQueuePush(wu->pendingEvents, &evt);
+}
 
-static void SendSctpShutdown(Dc *dc, Client *client) {
+static void WuSendSctpShutdown(Wu *wu, WuClient *client) {
   SctpPacket response;
   response.sourcePort = client->localSctpPort;
   response.destionationPort = client->remoteSctpPort;
@@ -172,25 +174,25 @@ static void SendSctpShutdown(Dc *dc, Client *client) {
   rc.length = SctpChunkLength(sizeof(rc.as.shutdown.cumulativeTsnAck));
   rc.as.shutdown.cumulativeTsnAck = client->remoteTsn;
 
-  SendSctp(dc, client, &response, &rc, 1);
+  WuSendSctp(wu, client, &response, &rc, 1);
 }
 
-void RemoveClient(Dc *dc, Client *client) {
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    if (dc->clients[i] == client) {
-      SendSctpShutdown(dc, client);
-      ClientFinish(client);
-      PoolRelease(dc->clientPool, client);
-      dc->clients[i] = dc->clients[dc->numClients - 1];
-      dc->numClients--;
+void WuRemoveClient(Wu *wu, WuClient *client) {
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    if (wu->clients[i] == client) {
+      WuSendSctpShutdown(wu, client);
+      WuClientFinish(client);
+      WuPoolRelease(wu->clientPool, client);
+      wu->clients[i] = wu->clients[wu->numClients - 1];
+      wu->numClients--;
       return;
     }
   }
 }
 
-static Client *FindClient(Dc *dc, const Address *address) {
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    Client *client = dc->clients[i];
+static WuClient *WuFindClient(Wu *wu, const WuAddress *address) {
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    WuClient *client = wu->clients[i];
     if (client->address.host == address->host &&
         client->address.port == address->port) {
       return client;
@@ -200,10 +202,10 @@ static Client *FindClient(Dc *dc, const Address *address) {
   return NULL;
 }
 
-static Client *FindClientByCreds(Dc *dc, const StunUserIdentifier *svUser,
-                                 const StunUserIdentifier *clUser) {
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    Client *client = dc->clients[i];
+static WuClient *WuFindClientByCreds(Wu *wu, const StunUserIdentifier *svUser,
+                                     const StunUserIdentifier *clUser) {
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    WuClient *client = wu->clients[i];
     if (StunUserIdentifierEqual(&client->serverUser, svUser) &&
         StunUserIdentifierEqual(&client->remoteUser, clUser)) {
       return client;
@@ -213,39 +215,39 @@ static Client *FindClientByCreds(Dc *dc, const StunUserIdentifier *svUser,
   return NULL;
 }
 
-static void ClientSendPendingDTLS(const Dc *dc, Client *client) {
+static void WuClientSendPendingDTLS(const Wu *wu, WuClient *client) {
   uint8_t sendBuffer[4096];
 
   while (BIO_ctrl_pending(client->outBio) > 0) {
     int bytes = BIO_read(client->outBio, sendBuffer, sizeof(sendBuffer));
     if (bytes > 0) {
-      dc->writeUdpData(sendBuffer, bytes, client, dc->userData);
+      wu->writeUdpData(sendBuffer, bytes, client, wu->userData);
     }
   }
 }
 
-static void TLSSend(const Dc *dc, Client *client, const void *data,
+static void TLSSend(const Wu *wu, WuClient *client, const void *data,
                     int32_t length) {
-  if (client->state < Client_DTLSHandshake ||
+  if (client->state < WuClient_DTLSHandshake ||
       !SSL_is_init_finished(client->ssl)) {
     return;
   }
 
   SSL_write(client->ssl, data, length);
-  ClientSendPendingDTLS(dc, client);
+  WuClientSendPendingDTLS(wu, client);
 }
 
-static void SendSctp(const Dc *dc, Client *client, const SctpPacket *packet,
-                     const SctpChunk *chunks, int32_t numChunks) {
+static void WuSendSctp(const Wu *wu, WuClient *client, const SctpPacket *packet,
+                       const SctpChunk *chunks, int32_t numChunks) {
   uint8_t outBuffer[4096];
   memset(outBuffer, 0, sizeof(outBuffer));
   size_t bytesWritten = SerializeSctpPacket(packet, chunks, numChunks,
                                             outBuffer, sizeof(outBuffer));
-  TLSSend(dc, client, outBuffer, bytesWritten);
+  TLSSend(wu, client, outBuffer, bytesWritten);
 }
 
-static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
-                       int32_t len) {
+static void WuHandleSctp(Wu *wu, WuClient *client, const uint8_t *buf,
+                         int32_t len) {
   const size_t maxChunks = 8;
   SctpChunk chunks[maxChunks];
   SctpPacket sctpPacket;
@@ -281,38 +283,38 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
           rc.flags = kSctpFlagCompleteUnreliable;
           rc.length = SctpDataChunkLength(1);
 
-          auto *chunkData = &rc.as.data;
-          chunkData->tsn = client->tsn++;
-          chunkData->streamId = chunk->as.data.streamId;
-          chunkData->streamSeq = 0;
-          chunkData->protoId = DCProto_Control;
-          chunkData->userData = &outType;
-          chunkData->userDataLength = 1;
+          auto *dc = &rc.as.data;
+          dc->tsn = client->tsn++;
+          dc->streamId = chunk->as.data.streamId;
+          dc->streamSeq = 0;
+          dc->protoId = DCProto_Control;
+          dc->userData = &outType;
+          dc->userDataLength = 1;
 
-          if (client->state != Client_DataChannelOpen) {
-            client->state = Client_DataChannelOpen;
-            Event event;
-            event.type = Event_ClientJoin;
+          if (client->state != WuClient_DataChannelOpen) {
+            client->state = WuClient_DataChannelOpen;
+            WuEvent event;
+            event.type = WuEvent_ClientJoin;
             event.client = client;
-            PushEvent(dc, event);
+            WuPushEvent(wu, event);
           }
 
-          SendSctp(dc, client, &response, &rc, 1);
+          WuSendSctp(wu, client, &response, &rc, 1);
         }
       } else if (dataChunk->protoId == DCProto_String) {
-        Event evt;
-        evt.type = Event_TextData;
+        WuEvent evt;
+        evt.type = WuEvent_TextData;
         evt.client = client;
         evt.data = dataChunk->userData;
         evt.length = dataChunk->userDataLength;
-        PushEvent(dc, evt);
+        WuPushEvent(wu, evt);
       } else if (dataChunk->protoId == DCProto_Binary) {
-        Event evt;
-        evt.type = Event_BinaryData;
+        WuEvent evt;
+        evt.type = WuEvent_BinaryData;
         evt.client = client;
         evt.data = dataChunk->userData;
         evt.length = dataChunk->userDataLength;
-        PushEvent(dc, evt);
+        WuPushEvent(wu, evt);
       }
 
       SctpPacket sack;
@@ -329,7 +331,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.as.sack.numGapAckBlocks = 0;
       rc.as.sack.numDupTsn = 0;
 
-      SendSctp(dc, client, &sack, &rc, 1);
+      WuSendSctp(wu, client, &sack, &rc, 1);
     } else if (chunk->type == Sctp_Init) {
       SctpPacket response;
       response.sourcePort = sctpPacket.destionationPort;
@@ -343,17 +345,17 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.flags = 0;
       rc.length = kSctpMinInitAckLength;
 
-      rc.as.init.initiateTag = RandomU32();
+      rc.as.init.initiateTag = WuRandomU32();
       rc.as.init.windowCredit = kSctpDefaultBufferSpace;
       rc.as.init.numOutboundStreams = chunk->as.init.numInboundStreams;
       rc.as.init.numInboundStreams = chunk->as.init.numOutboundStreams;
       rc.as.init.initialTsn = client->tsn;
 
-      SendSctp(dc, client, &response, &rc, 1);
+      WuSendSctp(wu, client, &response, &rc, 1);
       break;
     } else if (chunk->type == Sctp_CookieEcho) {
-      if (client->state < Client_SCTPEstablished) {
-        client->state = Client_SCTPEstablished;
+      if (client->state < WuClient_SCTPEstablished) {
+        client->state = WuClient_SCTPEstablished;
       }
       SctpPacket response;
       response.sourcePort = sctpPacket.destionationPort;
@@ -365,7 +367,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.flags = 0;
       rc.length = SctpChunkLength(0);
 
-      SendSctp(dc, client, &response, &rc, 1);
+      WuSendSctp(wu, client, &response, &rc, 1);
     } else if (chunk->type == Sctp_Heartbeat) {
       SctpPacket response;
       response.sourcePort = sctpPacket.destionationPort;
@@ -381,11 +383,11 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
 
       client->ttl = kMaxClientTtl;
 
-      SendSctp(dc, client, &response, &rc, 1);
+      WuSendSctp(wu, client, &response, &rc, 1);
     } else if (chunk->type == Sctp_HeartbeatAck) {
       client->ttl = kMaxClientTtl;
     } else if (chunk->type == Sctp_Abort) {
-      client->state = Client_WaitingRemoval;
+      client->state = WuClient_WaitingRemoval;
       return;
     } else if (chunk->type == Sctp_Sack) {
       auto *sack = &chunk->as.sack;
@@ -400,15 +402,15 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
         fwdTsnChunk.flags = 0;
         fwdTsnChunk.length = SctpChunkLength(4);
         fwdTsnChunk.as.forwardTsn.newCumulativeTsn = client->tsn;
-        SendSctp(dc, client, &fwdResponse, &fwdTsnChunk, 1);
+        WuSendSctp(wu, client, &fwdResponse, &fwdTsnChunk, 1);
       }
     }
   }
 }
 
-static void ReceiveDTLSPacket(Dc *dc, const uint8_t *data, size_t length,
-                              const Address *address) {
-  Client *client = FindClient(dc, address);
+static void WuReceiveDTLSPacket(Wu *wu, const uint8_t *data, size_t length,
+                                const WuAddress *address) {
+  WuClient *client = WuFindClient(wu, address);
   if (!client) {
     return;
   }
@@ -421,34 +423,34 @@ static void ReceiveDTLSPacket(Dc *dc, const uint8_t *data, size_t length,
     if (r <= 0) {
       r = SSL_get_error(client->ssl, r);
       if (SSL_ERROR_WANT_READ == r) {
-        ClientSendPendingDTLS(dc, client);
+        WuClientSendPendingDTLS(wu, client);
       } else if (SSL_ERROR_NONE != r) {
         char *error = ERR_error_string(r, NULL);
         if (error) {
-          ReportError(dc, error);
+          WuReportError(wu, error);
         }
       }
     }
   } else {
-    ClientSendPendingDTLS(dc, client);
+    WuClientSendPendingDTLS(wu, client);
 
     while (BIO_ctrl_pending(client->inBio) > 0) {
       uint8_t receiveBuffer[8092];
       int bytes = SSL_read(client->ssl, receiveBuffer, sizeof(receiveBuffer));
 
       if (bytes > 0) {
-        uint8_t *buf = (uint8_t *)BarePoolAcquire(dc->bp, bytes);
+        uint8_t *buf = (uint8_t *)WuArenaAcquire(wu->arena, bytes);
         memcpy(buf, receiveBuffer, bytes);
-        HandleSctp(dc, client, buf, bytes);
+        WuHandleSctp(wu, client, buf, bytes);
       }
     }
   }
 }
 
-static void HandleStun(Dc *dc, const StunPacket *packet,
-                       const Address *remote) {
-  Client *client =
-      FindClientByCreds(dc, &packet->serverUser, &packet->remoteUser);
+static void WuHandleStun(Wu *wu, const StunPacket *packet,
+                         const WuAddress *remote) {
+  WuClient *client =
+      WuFindClientByCreds(wu, &packet->serverUser, &packet->remoteUser);
 
   if (!client) {
     // TODO: Send unauthorized
@@ -472,22 +474,22 @@ static void HandleStun(Dc *dc, const StunPacket *packet,
   client->localSctpPort = remote->port;
   client->address = *remote;
 
-  dc->writeUdpData(stunResponse, serializedSize, client, dc->userData);
+  wu->writeUdpData(stunResponse, serializedSize, client, wu->userData);
 }
 
-static void PurgeDeadClients(Dc *dc) {
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    Client *client = dc->clients[i];
-    if (client->ttl <= 0.0 || client->state == Client_WaitingRemoval) {
-      Event evt;
-      evt.type = Event_ClientLeave;
+static void WuPurgeDeadClients(Wu *wu) {
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    WuClient *client = wu->clients[i];
+    if (client->ttl <= 0.0 || client->state == WuClient_WaitingRemoval) {
+      WuEvent evt;
+      evt.type = WuEvent_ClientLeave;
       evt.client = client;
-      PushEvent(dc, evt);
+      WuPushEvent(wu, evt);
     }
   }
 }
 
-static int32_t DcCryptoInit(Dc *dc) {
+static int32_t WuCryptoInit(Wu *wu) {
   static bool initDone = false;
 
   if (!initDone) {
@@ -499,93 +501,93 @@ static int32_t DcCryptoInit(Dc *dc) {
     initDone = true;
   }
 
-  dc->sslCtx = SSL_CTX_new(DTLS_server_method());
-  if (!dc->sslCtx) {
+  wu->sslCtx = SSL_CTX_new(DTLS_server_method());
+  if (!wu->sslCtx) {
     ERR_print_errors_fp(stderr);
     return 0;
   }
 
   int sslStatus =
-      SSL_CTX_set_cipher_list(dc->sslCtx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
+      SSL_CTX_set_cipher_list(wu->sslCtx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
   if (sslStatus != 1) {
     ERR_print_errors_fp(stderr);
     return 0;
   }
 
-  SSL_CTX_set_verify(dc->sslCtx, SSL_VERIFY_NONE, NULL);
+  SSL_CTX_set_verify(wu->sslCtx, SSL_VERIFY_NONE, NULL);
 
-  Cert cert;
+  WuCert cert;
 
-  sslStatus = SSL_CTX_use_PrivateKey(dc->sslCtx, cert.key);
-
-  if (sslStatus != 1) {
-    ERR_print_errors_fp(stderr);
-    return 0;
-  }
-
-  sslStatus = SSL_CTX_use_certificate(dc->sslCtx, cert.x509);
+  sslStatus = SSL_CTX_use_PrivateKey(wu->sslCtx, cert.key);
 
   if (sslStatus != 1) {
     ERR_print_errors_fp(stderr);
     return 0;
   }
 
-  sslStatus = SSL_CTX_check_private_key(dc->sslCtx);
+  sslStatus = SSL_CTX_use_certificate(wu->sslCtx, cert.x509);
 
   if (sslStatus != 1) {
     ERR_print_errors_fp(stderr);
     return 0;
   }
 
-  SSL_CTX_set_options(dc->sslCtx, SSL_OP_NO_QUERY_MTU);
+  sslStatus = SSL_CTX_check_private_key(wu->sslCtx);
 
-  memcpy(dc->certFingerprint, cert.fingerprint, sizeof(cert.fingerprint));
+  if (sslStatus != 1) {
+    ERR_print_errors_fp(stderr);
+    return 0;
+  }
+
+  SSL_CTX_set_options(wu->sslCtx, SSL_OP_NO_QUERY_MTU);
+
+  memcpy(wu->certFingerprint, cert.fingerprint, sizeof(cert.fingerprint));
 
   return 1;
 }
 
-int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
-  *dc = NULL;
+int32_t WuCreate(const char *host, const char *port, int maxClients, Wu **wu) {
+  *wu = NULL;
 
-  Dc *ctx = (Dc *)calloc(1, sizeof(Dc));
+  Wu *ctx = (Wu *)calloc(1, sizeof(Wu));
 
   if (!ctx) {
-    return OUT_OF_MEMORY;
+    return WU_OUT_OF_MEMORY;
   }
 
-  ctx->bp = (BarePool *)calloc(1, sizeof(BarePool));
+  ctx->arena = (WuArena *)calloc(1, sizeof(WuArena));
 
-  if (!ctx->bp) {
-    Destroy(ctx);
-    return OUT_OF_MEMORY;
+  if (!ctx->arena) {
+    WuDestroy(ctx);
+    return WU_OUT_OF_MEMORY;
   }
 
-  BarePoolInit(ctx->bp, 1 << 20);
+  WuArenaInit(ctx->arena, 1 << 20);
 
   ctx->time = MsNow() * 0.001;
   ctx->port = atoi(port);
-  ctx->pendingEvents = QueueCreate(sizeof(Event), 1024);
+  ctx->pendingEvents = WuQueueCreate(sizeof(WuEvent), 1024);
   ctx->errorCallback = DefaultErrorCallback;
   ctx->writeUdpData = WriteNothing;
 
   strncpy(ctx->host, host, sizeof(ctx->host));
 
-  if (!DcCryptoInit(ctx)) {
-    Destroy(ctx);
-    return ERROR;
+  if (!WuCryptoInit(ctx)) {
+    WuDestroy(ctx);
+    return WU_ERROR;
   }
 
   ctx->maxClients = maxClients <= 0 ? 256 : maxClients;
-  ctx->clientPool = PoolCreate(sizeof(Client), ctx->maxClients);
-  ctx->clients = (Client **)calloc(ctx->maxClients, sizeof(Client *));
+  ctx->clientPool = WuPoolCreate(sizeof(WuClient), ctx->maxClients);
+  ctx->clients = (WuClient **)calloc(ctx->maxClients, sizeof(WuClient *));
 
-  *dc = ctx;
-  return OK;
+  *wu = ctx;
+  return WU_OK;
 }
 
-static void SendHeartbeat(Dc *dc, Client *client) {
+static void WuSendHeartbeat(Wu *wu, WuClient *client) {
   SctpPacket packet;
-  packet.sourcePort = dc->port;
+  packet.sourcePort = wu->port;
   packet.destionationPort = client->remoteSctpPort;
   packet.verificationTag = client->sctpVerificationTag;
 
@@ -593,52 +595,52 @@ static void SendHeartbeat(Dc *dc, Client *client) {
   rc.type = Sctp_Heartbeat;
   rc.flags = kSctpFlagCompleteUnreliable;
   rc.length = SctpChunkLength(4 + 8);
-  rc.as.heartbeat.heartbeatInfo = (const uint8_t *)&dc->time;
-  rc.as.heartbeat.heartbeatInfoLen = sizeof(dc->time);
+  rc.as.heartbeat.heartbeatInfo = (const uint8_t *)&wu->time;
+  rc.as.heartbeat.heartbeatInfoLen = sizeof(wu->time);
 
-  SendSctp(dc, client, &packet, &rc, 1);
+  WuSendSctp(wu, client, &packet, &rc, 1);
 }
 
-static void UpdateClients(Dc *dc) {
+static void WuUpdateClients(Wu *wu) {
   double t = MsNow() * 0.001;
-  dc->dt = t - dc->time;
-  dc->time = t;
+  wu->dt = t - wu->time;
+  wu->time = t;
 
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    Client *client = dc->clients[i];
-    client->ttl -= dc->dt;
-    client->nextHeartbeat -= dc->dt;
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    WuClient *client = wu->clients[i];
+    client->ttl -= wu->dt;
+    client->nextHeartbeat -= wu->dt;
 
     if (client->nextHeartbeat <= 0.0) {
       client->nextHeartbeat = heartbeatInterval;
-      SendHeartbeat(dc, client);
+      WuSendHeartbeat(wu, client);
     }
 
-    ClientSendPendingDTLS(dc, client);
+    WuClientSendPendingDTLS(wu, client);
   }
 }
 
-int32_t Update(Dc *dc, Event *evt) {
-  if (QueuePop(dc->pendingEvents, evt)) {
+int32_t WuUpdate(Wu *wu, WuEvent *evt) {
+  if (WuQueuePop(wu->pendingEvents, evt)) {
     return 1;
   }
 
-  UpdateClients(dc);
-  BarePoolReset(dc->bp);
+  WuUpdateClients(wu);
+  WuArenaReset(wu->arena);
 
-  PurgeDeadClients(dc);
+  WuPurgeDeadClients(wu);
 
   return 0;
 }
 
-static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
-                        int32_t length, DataChanProtoIdentifier proto) {
-  if (client->state < Client_DataChannelOpen) {
+static int32_t WuSendData(Wu *wu, WuClient *client, const uint8_t *data,
+                          int32_t length, DataChanProtoIdentifier proto) {
+  if (client->state < WuClient_DataChannelOpen) {
     return -1;
   }
 
   SctpPacket packet;
-  packet.sourcePort = dc->port;
+  packet.sourcePort = wu->port;
   packet.destionationPort = client->remoteSctpPort;
   packet.verificationTag = client->sctpVerificationTag;
 
@@ -647,45 +649,45 @@ static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
   rc.flags = kSctpFlagCompleteUnreliable;
   rc.length = SctpDataChunkLength(length);
 
-  auto *chunkData = &rc.as.data;
-  chunkData->tsn = client->tsn++;
-  chunkData->streamId = 0; // TODO: Does it matter?
-  chunkData->streamSeq = 0;
-  chunkData->protoId = proto;
-  chunkData->userData = data;
-  chunkData->userDataLength = length;
+  auto *dc = &rc.as.data;
+  dc->tsn = client->tsn++;
+  dc->streamId = 0; // TODO: Does it matter?
+  dc->streamSeq = 0;
+  dc->protoId = proto;
+  dc->userData = data;
+  dc->userDataLength = length;
 
-  SendSctp(dc, client, &packet, &rc, 1);
+  WuSendSctp(wu, client, &packet, &rc, 1);
   return 0;
 }
 
-int32_t SendText(Dc *dc, Client *client, const char *text, int32_t length) {
-  return SendData(dc, client, (const uint8_t *)text, length, DCProto_String);
+int32_t WuSendText(Wu *wu, WuClient *client, const char *text, int32_t length) {
+  return WuSendData(wu, client, (const uint8_t *)text, length, DCProto_String);
 }
 
-int32_t SendBinary(Dc *dc, Client *client, const uint8_t *data,
-                   int32_t length) {
-  return SendData(dc, client, data, length, DCProto_Binary);
+int32_t WuSendBinary(Wu *wu, WuClient *client, const uint8_t *data,
+                     int32_t length) {
+  return WuSendData(wu, client, data, length, DCProto_Binary);
 }
 
-SDPResult ExchangeSDP(Dc *dc, const char *sdp, int32_t length) {
+SDPResult WuExchangeSDP(Wu *wu, const char *sdp, int32_t length) {
   ICESdpFields iceFields;
   if (!ParseSdp(sdp, length, &iceFields)) {
-    return {SDPStatus_InvalidSDP, NULL, NULL, 0};
+    return {WuSDPStatus_InvalidSDP, NULL, NULL, 0};
   }
 
-  Client *client = NewClient(dc);
+  WuClient *client = WuNewClient(wu);
 
   if (!client) {
-    return {SDPStatus_MaxClients, NULL, NULL, 0};
+    return {WuSDPStatus_MaxClients, NULL, NULL, 0};
   }
 
   client->serverUser.length = 4;
-  RandomString((char *)client->serverUser.identifier,
-               client->serverUser.length);
+  WuRandomString((char *)client->serverUser.identifier,
+                 client->serverUser.length);
   client->serverPassword.length = 24;
-  RandomString((char *)client->serverPassword.identifier,
-               client->serverPassword.length);
+  WuRandomString((char *)client->serverPassword.identifier,
+                 client->serverPassword.length);
   memcpy(client->remoteUser.identifier, iceFields.ufrag.value,
          Min(iceFields.ufrag.length, kMaxStunIdentifierLength));
   client->remoteUser.length = iceFields.ufrag.length;
@@ -694,53 +696,55 @@ SDPResult ExchangeSDP(Dc *dc, const char *sdp, int32_t length) {
 
   int sdpLength = 0;
   const char *responseSdp = GenerateSDP(
-      dc->bp, dc->certFingerprint, dc->host, dc->port,
+      wu->arena, wu->certFingerprint, wu->host, wu->port,
       (char *)client->serverUser.identifier, client->serverUser.length,
       (char *)client->serverPassword.identifier, client->serverPassword.length,
       &iceFields, &sdpLength);
 
   if (!responseSdp) {
-    return {SDPStatus_Error, NULL, NULL, 0};
+    return {WuSDPStatus_Error, NULL, NULL, 0};
   }
 
-  return {SDPStatus_Success, client, responseSdp, sdpLength};
+  return {WuSDPStatus_Success, client, responseSdp, sdpLength};
 }
 
-void SetUserData(Dc *dc, void *userData) { dc->userData = userData; }
+void WuSetUserData(Wu *wu, void *userData) { wu->userData = userData; }
 
-void HandleUDP(Dc *dc, const Address *remote, const uint8_t *data,
-               int32_t length) {
+void WuHandleUDP(Wu *wu, const WuAddress *remote, const uint8_t *data,
+                 int32_t length) {
   StunPacket stunPacket;
   if (ParseStun(data, length, &stunPacket)) {
-    HandleStun(dc, &stunPacket, remote);
+    WuHandleStun(wu, &stunPacket, remote);
   } else {
-    ReceiveDTLSPacket(dc, data, length, remote);
+    WuReceiveDTLSPacket(wu, data, length, remote);
   }
 }
 
-void SetUDPWriteFunction(Dc *dc, WriteFn write) { dc->writeUdpData = write; }
+void WuSetUDPWriteFunction(Wu *wu, WuWriteFn write) {
+  wu->writeUdpData = write;
+}
 
-Address ClientGetAddress(const Client *client) { return client->address; }
+WuAddress WuClientGetAddress(const WuClient *client) { return client->address; }
 
-void SetErrorCallback(Dc *dc, ErrorFn callback) {
+void WuSetErrorCallback(Wu *wu, WuErrorFn callback) {
   if (callback) {
-    dc->errorCallback = callback;
+    wu->errorCallback = callback;
   } else {
-    dc->errorCallback = DefaultErrorCallback;
+    wu->errorCallback = DefaultErrorCallback;
   }
 }
 
-void Destroy(Dc *dc) {
-  if (!dc) {
+void WuDestroy(Wu *wu) {
+  if (!wu) {
     return;
   }
 
-  free(dc);
+  free(wu);
 }
 
-Client *FindClient(const Dc *dc, Address address) {
-  for (int32_t i = 0; i < dc->numClients; i++) {
-    Client *c = dc->clients[i];
+WuClient *WuFindClient(const Wu *wu, WuAddress address) {
+  for (int32_t i = 0; i < wu->numClients; i++) {
+    WuClient *c = wu->clients[i];
 
     if (c->address.host == address.host && c->address.port == address.port) {
       return c;

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "String.h"
+#include "WuBufferOp.h"
+#include "WuString.h"
 
 const int32_t kMaxStunIdentifierLength = 128;
 const int32_t kStunTransactionIdLength = 12;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
-project(WebDc)
+project(WebUdp)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(OPENSSL_INCLUDE_DIR /usr/include/openssl-1.1/)
@@ -20,59 +20,60 @@ if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
   message(FATAL_ERROR "Invalid OpenSSL version ${OPENSSL_VERSION}")
 endif()
 
+option(WITH_NODE "Build Node bindings" OFF)
 option(WITH_TESTS "Build tests" ON)
 
 set(EXAMPLES_DIR ${CMAKE_CURRENT_BINARY_DIR}/examples)
 
-add_library(Dc
+add_library(Wu
   src/CRC32.cc
-  src/Dc.cc
-  src/BarePool.cc
-  src/Pool.cc
-  src/Sctp.cc
-  src/Sdp.cc
-  src/String.cc
-  src/Stun.cc
-  src/Crypto.cc
-  src/Rng.cc
-  src/Queue.cc
+  src/Wu.cc
+  src/WuArena.cc
+  src/WuPool.cc
+  src/WuSctp.cc
+  src/WuSdp.cc
+  src/WuString.cc
+  src/WuStun.cc
+  src/WuCrypto.cc
+  src/WuRng.cc
+  src/WuQueue.cc
 )
 
 if (UNIX AND NOT APPLE)
-  add_library(Host
-    src/HostEpoll.cc
-    src/Network.cc
+  add_library(WuHost
+    src/WuHostEpoll.cc
+    src/WuNetwork.cc
     src/picohttpparser.c
   )
 else ()
   message(WARNING "Unsupported platform, defaulting to null (no-op) implementation")
-  add_library(Host
-    HostNull.cc
+  add_library(WuHost
+    WuHostNull.cc
   )
 endif()
 
-target_include_directories(Dc
+target_include_directories(Wu
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include>
   PRIVATE OpenSSL::SSL
 )
 
-target_include_directories(Host
+target_include_directories(WuHost
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Dc
+target_link_libraries(Wu
   PRIVATE OpenSSL::SSL
   PRIVATE OpenSSL::Crypto
   PRIVATE Threads::Threads
 )
 
-target_link_libraries(Host Dc)
+target_link_libraries(WuHost Wu)
 
-target_compile_options(Dc
+target_compile_options(Wu
   PRIVATE
   -Wall
   -fPIC
@@ -80,14 +81,14 @@ target_compile_options(Dc
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 )
 
-target_compile_options(Host
+target_compile_options(WuHost
   PRIVATE
   -Wall
   $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 )
 
-install(TARGETS Dc Host EXPORT Targets
+install(TARGETS Wu WuHost EXPORT WuTargets
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
@@ -95,25 +96,60 @@ install(TARGETS Dc Host EXPORT Targets
   PUBLIC_HEADER DESTINATION include
 )
 
-install(FILES src/Dc.h src/Host.h DESTINATION include)
+install(FILES Wu.h WuHost.h DESTINATION include)
 
-install(EXPORT Targets
-  FILE Targets.cmake
-  NAMESPACE Dc::
-  DESTINATION lib/cmake/Dc
+install(EXPORT WuTargets
+  FILE WuTargets.cmake
+  NAMESPACE Wu::
+  DESTINATION lib/cmake/Wu
 )
 
 add_executable(EchoServer examples/EchoServer.c)
 target_include_directories(EchoServer PUBLIC src/)
-target_link_libraries(EchoServer Host)
+target_link_libraries(EchoServer WuHost)
 
-set_target_properties(Dc Host EchoServer PROPERTIES
+set_target_properties(Wu WuHost EchoServer PROPERTIES
   CXX_STANDARD 11
   RUNTIME_OUTPUT_DIRECTORY ${EXAMPLES_DIR}
 )
 
 file(MAKE_DIRECTORY ${EXAMPLES_DIR})
 file(COPY examples/client DESTINATION ${EXAMPLES_DIR})
+
+if (WITH_NODE)
+  find_program(NPM npm)
+
+  if (NPM)
+    cmake_policy(SET CMP0070 NEW)
+
+    file (GENERATE OUTPUT binding.gyp
+      INPUT ${CMAKE_CURRENT_SOURCE_DIR}/binding.gyp.in
+    )
+
+    file (GENERATE OUTPUT package.json
+      INPUT ${CMAKE_CURRENT_SOURCE_DIR}/package.json
+    )
+
+    add_custom_target(node ALL
+      COMMAND npm install
+      COMMAND npm run configure
+      COMMAND npm run build
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    add_custom_command(TARGET node POST_BUILD
+      COMMAND ${CMAKE_COMMAND}
+        -E copy ${CMAKE_CURRENT_BINARY_DIR}/build/Release/WebUDP.node ${EXAMPLES_DIR}
+    )
+
+    add_dependencies(node Wu)
+
+    file(COPY examples/EchoServer.js DESTINATION ${EXAMPLES_DIR})
+  else()
+    message(WARNING "npm not found, skipping Node bindings")
+  endif()
+
+endif()
 
 if (WITH_TESTS)
   set(TESTS_DIR ${CMAKE_CURRENT_BINARY_DIR}/test)
@@ -125,8 +161,8 @@ if (WITH_TESTS)
   target_include_directories(FuzzSdp PUBLIC src/)
   target_include_directories(FuzzSctp PUBLIC src/)
   target_include_directories(FuzzStun PUBLIC src/)
-  target_link_libraries(FuzzSdp Dc)
-  target_link_libraries(FuzzSctp Dc)
-  target_link_libraries(FuzzStun Dc)
+  target_link_libraries(FuzzSdp Wu)
+  target_link_libraries(FuzzSctp Wu)
+  target_link_libraries(FuzzStun Wu)
   file(COPY test/data DESTINATION ${TESTS_DIR})
 endif()

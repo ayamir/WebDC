@@ -1,14 +1,14 @@
-# WebDC
+# WebUDP
 
 WebRTC datachannel library and server.
 
 The library implements a minimal subset of WebRTC to achieve unreliable and out of order UDP transfer for browser clients.
 See the [EchoServer](https://github.com/ayamir/webdc/blob/master/examples/EchoServer.c) for how to connect to the server from a browser.
-The core library (Dc) is platform independent. Refer to `HostEpoll` for linux-platform usage.
+The core library (Wu) is platform independent. Refer to `WuHostEpoll` or `WuHostNode` for platform-specific usage.
 
 ## Example
 
-![image-20240220140659857](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240220140659857.png)
+![image-20240216132521221](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240216132521221.png)
 
 ## Developing
 
@@ -29,6 +29,7 @@ make -j
 ### Host platforms
 
 - Linux (epoll)
+- Node.js `-DWITH_NODE=ON`
 
 ### Issues
 

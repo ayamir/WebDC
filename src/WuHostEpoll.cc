@@ -1,8 +1,10 @@
-#include "Host.h"
-#include "Http.h"
-#include "Network.h"
-#include "Pool.h"
-#include "String.h"
+#include "WuHost.h"
+#include "WuHttp.h"
+#include "WuMath.h"
+#include "WuNetwork.h"
+#include "WuPool.h"
+#include "WuRng.h"
+#include "WuString.h"
 #include "picohttpparser.h"
 #include <errno.h>
 #include <netdb.h>
@@ -15,47 +17,48 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-struct ConnectionBuffer {
+struct WuConnectionBuffer {
   size_t size = 0;
   int fd = -1;
   uint8_t requestBuffer[kMaxHttpRequestLength];
 };
 
-struct Host {
-  Dc *dc;
+struct WuHost {
+  Wu *wu;
   int tcpfd;
   int udpfd;
   int epfd;
   int pollTimeout;
-  Pool *bufferPool;
+  WuPool *bufferPool;
   struct epoll_event *events;
   int32_t maxEvents;
   uint16_t port;
   char errBuf[512];
 };
 
-static void HostReclaimBuffer(Host *host, ConnectionBuffer *buffer) {
+static void HostReclaimBuffer(WuHost *host, WuConnectionBuffer *buffer) {
   buffer->fd = -1;
   buffer->size = 0;
-  PoolRelease(host->bufferPool, buffer);
+  WuPoolRelease(host->bufferPool, buffer);
 }
 
-static ConnectionBuffer *HostGetBuffer(Host *host) {
-  ConnectionBuffer *buffer = (ConnectionBuffer *)PoolAcquire(host->bufferPool);
+static WuConnectionBuffer *HostGetBuffer(WuHost *host) {
+  WuConnectionBuffer *buffer =
+      (WuConnectionBuffer *)WuPoolAcquire(host->bufferPool);
   return buffer;
 }
 
-static void HandleErrno(Host *host, const char *description) {
+static void HandleErrno(WuHost *host, const char *description) {
   snprintf(host->errBuf, sizeof(host->errBuf), "%s: %s", description,
            strerror(errno));
-  ReportError(host->dc, host->errBuf);
+  WuReportError(host->wu, host->errBuf);
 }
 
 static void WriteUDPData(const uint8_t *data, size_t length,
-                         const Client *client, void *userData) {
-  Host *host = (Host *)userData;
+                         const WuClient *client, void *userData) {
+  WuHost *host = (WuHost *)userData;
 
-  Address address = ClientGetAddress(client);
+  WuAddress address = WuClientGetAddress(client);
   struct sockaddr_in netaddr;
   netaddr.sin_family = AF_INET;
   netaddr.sin_port = htons(address.port);
@@ -65,7 +68,7 @@ static void WriteUDPData(const uint8_t *data, size_t length,
          sizeof(netaddr));
 }
 
-static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
+static void HandleHttpRequest(WuHost *host, WuConnectionBuffer *conn) {
   for (;;) {
     ssize_t count = read(conn->fd, conn->requestBuffer + conn->size,
                          kMaxHttpRequestLength - conn->size);
@@ -107,11 +110,11 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
 
       if (contentLength > 0) {
         if (conn->size == parseStatus + contentLength) {
-          const SDPResult sdp = ExchangeSDP(
-              host->dc, (const char *)conn->requestBuffer + parseStatus,
+          const SDPResult sdp = WuExchangeSDP(
+              host->wu, (const char *)conn->requestBuffer + parseStatus,
               contentLength);
 
-          if (sdp.status == SDPStatus_Success) {
+          if (sdp.status == WuSDPStatus_Success) {
             char response[4096];
             int responseLength =
                 snprintf(response, sizeof(response),
@@ -123,9 +126,9 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
                          "\r\n%.*s",
                          sdp.sdpLength, sdp.sdpLength, sdp.sdp);
             SocketWrite(conn->fd, response, responseLength);
-          } else if (sdp.status == SDPStatus_MaxClients) {
+          } else if (sdp.status == WuSDPStatus_MaxClients) {
             SocketWrite(conn->fd, STRLIT(HTTP_UNAVAILABLE));
-          } else if (sdp.status == SDPStatus_InvalidSDP) {
+          } else if (sdp.status == WuSDPStatus_InvalidSDP) {
             SocketWrite(conn->fd, STRLIT(HTTP_BAD_REQUEST));
           } else {
             SocketWrite(conn->fd, STRLIT(HTTP_SERVER_ERROR));
@@ -152,8 +155,8 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
   }
 }
 
-int32_t HostServe(Host *host, Event *evt, int timeout) {
-  int32_t hres = Update(host->dc, evt);
+int32_t WuHostServe(WuHost *host, WuEvent *evt, int timeout) {
+  int32_t hres = WuUpdate(host->wu, evt);
 
   if (hres) {
     return hres;
@@ -163,7 +166,7 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
 
   for (int i = 0; i < n; i++) {
     struct epoll_event *e = &host->events[i];
-    ConnectionBuffer *c = (ConnectionBuffer *)e->data.ptr;
+    WuConnectionBuffer *c = (WuConnectionBuffer *)e->data.ptr;
 
     if ((e->events & EPOLLERR) || (e->events & EPOLLHUP) ||
         (!(e->events & EPOLLIN))) {
@@ -191,7 +194,8 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
           continue;
         }
 
-        ConnectionBuffer *conn = HostGetBuffer(host);
+        WuConnectionBuffer *conn = HostGetBuffer(host);
+        ;
 
         if (conn) {
           conn->fd = infd;
@@ -214,10 +218,10 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
       ssize_t r = 0;
       while ((r = recvfrom(host->udpfd, buf, sizeof(buf), 0,
                            (struct sockaddr *)&remote, &remoteLen)) > 0) {
-        Address address;
+        WuAddress address;
         address.host = ntohl(remote.sin_addr.s_addr);
         address.port = ntohs(remote.sin_port);
-        HandleUDP(host->dc, &address, buf, r);
+        WuHandleUDP(host->wu, &address, buf, r);
       }
 
     } else {
@@ -228,19 +232,19 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
   return 0;
 }
 
-int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
-                   Host **host) {
+int32_t WuHostCreate(const char *hostAddr, const char *port, int32_t maxClients,
+                     WuHost **host) {
   *host = NULL;
 
-  Host *ctx = (Host *)calloc(1, sizeof(Host));
+  WuHost *ctx = (WuHost *)calloc(1, sizeof(WuHost));
 
   if (!ctx) {
-    return OUT_OF_MEMORY;
+    return WU_OUT_OF_MEMORY;
   }
 
-  int32_t status = Create(hostAddr, port, maxClients, &ctx->dc);
+  int32_t status = WuCreate(hostAddr, port, maxClients, &ctx->wu);
 
-  if (status != OK) {
+  if (status != WU_OK) {
     free(ctx);
     return status;
   }
@@ -248,53 +252,53 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
   ctx->tcpfd = CreateSocket(port, ST_TCP);
 
   if (ctx->tcpfd == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   status = MakeNonBlocking(ctx->tcpfd);
   if (status == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   status = listen(ctx->tcpfd, SOMAXCONN);
   if (status == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   ctx->udpfd = CreateSocket(port, ST_UDP);
 
   if (ctx->udpfd == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   status = MakeNonBlocking(ctx->udpfd);
   if (status == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   ctx->epfd = epoll_create1(0);
   if (ctx->epfd == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   const int32_t maxEvents = 128;
-  ctx->bufferPool = PoolCreate(sizeof(ConnectionBuffer), maxEvents + 2);
+  ctx->bufferPool = WuPoolCreate(sizeof(WuConnectionBuffer), maxEvents + 2);
 
   if (!ctx->bufferPool) {
-    HostDestroy(ctx);
-    return OUT_OF_MEMORY;
+    WuHostDestroy(ctx);
+    return WU_OUT_OF_MEMORY;
   }
 
-  ConnectionBuffer *udpBuf = HostGetBuffer(ctx);
+  WuConnectionBuffer *udpBuf = HostGetBuffer(ctx);
   udpBuf->fd = ctx->udpfd;
 
-  ConnectionBuffer *tcpBuf = HostGetBuffer(ctx);
+  WuConnectionBuffer *tcpBuf = HostGetBuffer(ctx);
   tcpBuf->fd = ctx->tcpfd;
 
   struct epoll_event event;
@@ -303,57 +307,57 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
 
   status = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->tcpfd, &event);
   if (status == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   event.data.ptr = udpBuf;
   status = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->udpfd, &event);
   if (status == -1) {
-    HostDestroy(ctx);
-    return ERROR;
+    WuHostDestroy(ctx);
+    return WU_ERROR;
   }
 
   ctx->maxEvents = maxEvents;
   ctx->events = (struct epoll_event *)calloc(ctx->maxEvents, sizeof(event));
 
   if (!ctx->events) {
-    HostDestroy(ctx);
-    return OUT_OF_MEMORY;
+    WuHostDestroy(ctx);
+    return WU_OUT_OF_MEMORY;
   }
 
-  SetUserData(ctx->dc, ctx);
-  SetUDPWriteFunction(ctx->dc, WriteUDPData);
+  WuSetUserData(ctx->wu, ctx);
+  WuSetUDPWriteFunction(ctx->wu, WriteUDPData);
 
   *host = ctx;
 
-  return OK;
+  return WU_OK;
 }
 
-void HostRemoveClient(Host *host, Client *client) {
-  RemoveClient(host->dc, client);
+void WuHostRemoveClient(WuHost *host, WuClient *client) {
+  WuRemoveClient(host->wu, client);
 }
 
-int32_t HostSendText(Host *host, Client *client, const char *text,
-                     int32_t length) {
-  return SendText(host->dc, client, text, length);
-}
-
-int32_t HostSendBinary(Host *host, Client *client, const uint8_t *data,
+int32_t WuHostSendText(WuHost *host, WuClient *client, const char *text,
                        int32_t length) {
-  return SendBinary(host->dc, client, data, length);
+  return WuSendText(host->wu, client, text, length);
 }
 
-void HostSetErrorCallback(Host *host, ErrorFn callback) {
-  SetErrorCallback(host->dc, callback);
+int32_t WuHostSendBinary(WuHost *host, WuClient *client, const uint8_t *data,
+                         int32_t length) {
+  return WuSendBinary(host->wu, client, data, length);
 }
 
-void HostDestroy(Host *host) {
+void WuHostSetErrorCallback(WuHost *host, WuErrorFn callback) {
+  WuSetErrorCallback(host->wu, callback);
+}
+
+void WuHostDestroy(WuHost *host) {
   if (!host) {
     return;
   }
 
-  Destroy(host->dc);
+  WuDestroy(host->wu);
 
   if (host->tcpfd != -1) {
     close(host->tcpfd);
@@ -376,6 +380,6 @@ void HostDestroy(Host *host) {
   }
 }
 
-Client *HostFindClient(const Host *host, Address address) {
-  return FindClient(host->dc, address);
+WuClient *WuHostFindClient(const WuHost *host, WuAddress address) {
+  return WuFindClient(host->wu, address);
 }

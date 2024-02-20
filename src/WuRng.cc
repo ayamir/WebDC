@@ -1,4 +1,4 @@
-#include "Rng.h"
+#include "WuRng.h"
 #include <x86intrin.h>
 
 static const char kCharacterTable[] =
@@ -8,7 +8,7 @@ static inline uint64_t rotl(const uint64_t x, int k) {
   return (x << k) | (x >> (64 - k));
 }
 
-uint64_t GetRngSeed() {
+uint64_t WuGetRngSeed() {
   uint64_t x = __rdtsc();
   uint64_t z = (x += UINT64_C(0x9E3779B97F4A7C15));
   z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
@@ -16,12 +16,12 @@ uint64_t GetRngSeed() {
   return z ^ (z >> 31);
 }
 
-void RngInit(RngState *state, uint64_t seed) {
+void WuRngInit(WuRngState *state, uint64_t seed) {
   state->s[0] = seed;
   state->s[1] = seed;
 }
 
-uint64_t RngNext(RngState *state) {
+uint64_t WuRngNext(WuRngState *state) {
   const uint64_t s0 = state->s[0];
   uint64_t s1 = state->s[1];
   const uint64_t result = s0 + s1;
@@ -33,19 +33,19 @@ uint64_t RngNext(RngState *state) {
   return result;
 }
 
-void RandomString(char *out, size_t length) {
-  RngState state;
-  RngInit(&state, GetRngSeed());
+void WuRandomString(char *out, size_t length) {
+  WuRngState state;
+  WuRngInit(&state, WuGetRngSeed());
 
   for (size_t i = 0; i < length; i++) {
-    out[i] = kCharacterTable[RngNext(&state) % (sizeof(kCharacterTable) - 1)];
+    out[i] = kCharacterTable[WuRngNext(&state) % (sizeof(kCharacterTable) - 1)];
   }
 }
 
-uint64_t RandomU64() {
-  RngState state;
-  RngInit(&state, GetRngSeed());
-  return RngNext(&state);
+uint64_t WuRandomU64() {
+  WuRngState state;
+  WuRngInit(&state, WuGetRngSeed());
+  return WuRngNext(&state);
 }
 
-uint32_t RandomU32() { return (uint32_t)RandomU64(); }
+uint32_t WuRandomU32() { return (uint32_t)WuRandomU64(); }

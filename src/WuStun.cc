@@ -1,7 +1,6 @@
-#include "Stun.h"
-#include "BufferOp.hpp"
+#include "WuStun.h"
 #include "CRC32.h"
-#include "Crypto.h"
+#include "WuCrypto.h"
 #include <arpa/inet.h>
 #include <string.h>
 
@@ -113,7 +112,7 @@ int32_t SerializeStunPacket(const StunPacket *packet, const uint8_t *password,
   offset += WriteScalar(dest + offset, packet->xorMappedAddress.port);
   offset += WriteScalar(dest + offset, packet->xorMappedAddress.address.ipv4);
 
-  SHA1Digest digest = SHA1(dest, offset, password, passwordLen);
+  WuSHA1Digest digest = WuSHA1(dest, offset, password, passwordLen);
 
   offset += WriteScalar(dest + offset, htons(StunAttrib_MessageIntegrity));
   offset += WriteScalar(dest + offset, htons(20));

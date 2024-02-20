@@ -1,6 +1,6 @@
-#include "Sdp.h"
-#include "BarePool.h"
-#include "Rng.h"
+#include "WuSdp.h"
+#include "WuArena.h"
+#include "WuRng.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -109,7 +109,7 @@ bool ParseSdp(const char *sdp, size_t len, ICESdpFields *fields) {
          ValidField(&fields->mid);
 }
 
-const char *GenerateSDP(BarePool *bp, const char *certFingerprint,
+const char *GenerateSDP(WuArena *arena, const char *certFingerprint,
                         const char *serverIp, uint16_t serverPort,
                         const char *ufrag, int32_t ufragLen, const char *pass,
                         int32_t passLen, const ICESdpFields *remote,
@@ -136,15 +136,15 @@ const char *GenerateSDP(BarePool *bp, const char *certFingerprint,
       "\"type\":\"answer\"},\"candidate\":{\"sdpMLineIndex\":0,"
       "\"sdpMid\":\"%.*s\",\"candidate\":\"candidate:1 1 UDP %u %s %u typ "
       "host\"}}",
-      RandomU32(), port, port, serverIp, ufragLen, ufrag, passLen, pass,
+      WuRandomU32(), port, port, serverIp, ufragLen, ufrag, passLen, pass,
       certFingerprint, remote->mid.length, remote->mid.value, port,
-      remote->mid.length, remote->mid.value, RandomU32(), serverIp, port);
+      remote->mid.length, remote->mid.value, WuRandomU32(), serverIp, port);
 
   if (length <= 0 || length >= int32_t(sizeof(buf))) {
     return NULL;
   }
 
-  char *sdp = (char *)BarePoolAcquire(bp, length);
+  char *sdp = (char *)WuArenaAcquire(arena, length);
 
   if (!sdp) {
     return NULL;

@@ -1,7 +1,8 @@
-#include "Sctp.h"
-#include "BufferOp.hpp"
+#include "WuSctp.h"
 #include "CRC32.h"
-#include "Math.h"
+#include "WuBufferOp.h"
+#include "WuMath.h"
+#include "WuNetwork.h"
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>

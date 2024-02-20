@@ -1,24 +1,24 @@
-#include "Crypto.h"
-#include "Rng.h"
+#include "WuCrypto.h"
+#include "WuRng.h"
 #include <assert.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 
-SHA1Digest SHA1(const uint8_t *src, size_t len, const void *key,
-                size_t keyLen) {
-  SHA1Digest digest;
+WuSHA1Digest WuSHA1(const uint8_t *src, size_t len, const void *key,
+                    size_t keyLen) {
+  WuSHA1Digest digest;
   HMAC(EVP_sha1(), key, keyLen, src, len, digest.bytes, NULL);
 
   return digest;
 }
 
-Cert::Cert() : key(EVP_PKEY_new()), x509(X509_new()) {
+WuCert::WuCert() : key(EVP_PKEY_new()), x509(X509_new()) {
   RSA *rsa = RSA_new();
   BIGNUM *n = BN_new();
   BN_set_word(n, RSA_F4);
 
   if (!RAND_status()) {
-    uint64_t seed = RandomU64();
+    uint64_t seed = WuRandomU64();
     RAND_seed(&seed, sizeof(seed));
   }
 
@@ -32,7 +32,7 @@ Cert::Cert() : key(EVP_PKEY_new()), x509(X509_new()) {
 
   X509_set_version(x509, 0L);
   X509_NAME_add_entry_by_NID(name, NID_commonName, MBSTRING_UTF8,
-                             (unsigned char *)"dcsocket", -1, -1, 0);
+                             (unsigned char *)"wusocket", -1, -1, 0);
   X509_set_subject_name(x509, name);
   X509_set_issuer_name(x509, name);
   X509_gmtime_adj(X509_get_notBefore(x509), 0);
@@ -59,7 +59,7 @@ Cert::Cert() : key(EVP_PKEY_new()), x509(X509_new()) {
   X509_NAME_free(name);
 }
 
-Cert::~Cert() {
+WuCert::~WuCert() {
   EVP_PKEY_free(key);
   X509_free(x509);
 }

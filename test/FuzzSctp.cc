@@ -1,5 +1,5 @@
 #include "Fuzz.h"
-#include "Sctp.h"
+#include "WuSctp.h"
 
 int main(int argc, char **argv) {
   if (argc < 2)
