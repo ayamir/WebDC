@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.7)
-project(WebDC)
+project(WebDc)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(OPENSSL_INCLUDE_DIR /usr/include/openssl-1.1/)
@@ -24,55 +24,55 @@ option(WITH_TESTS "Build tests" ON)
 
 set(EXAMPLES_DIR ${CMAKE_CURRENT_BINARY_DIR}/examples)
 
-add_library(Wu
+add_library(Dc
   src/CRC32.cc
-  src/Wu.cc
-  src/WuArena.cc
-  src/WuPool.cc
-  src/WuSctp.cc
-  src/WuSdp.cc
-  src/WuString.cc
-  src/WuStun.cc
-  src/WuCrypto.cc
-  src/WuRng.cc
-  src/WuQueue.cc
+  src/Dc.cc
+  src/BarePool.cc
+  src/Pool.cc
+  src/Sctp.cc
+  src/Sdp.cc
+  src/String.cc
+  src/Stun.cc
+  src/Crypto.cc
+  src/Rng.cc
+  src/Queue.cc
 )
 
 if (UNIX AND NOT APPLE)
-  add_library(WuHost
-    src/WuHostEpoll.cc
-    src/WuNetwork.cc
+  add_library(Host
+    src/HostEpoll.cc
+    src/Network.cc
     src/picohttpparser.c
   )
 else ()
   message(WARNING "Unsupported platform, defaulting to null (no-op) implementation")
-  add_library(WuHost
-    WuHostNull.cc
+  add_library(Host
+    HostNull.cc
   )
 endif()
 
-target_include_directories(Wu
+target_include_directories(Dc
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include>
   PRIVATE OpenSSL::SSL
 )
 
-target_include_directories(WuHost
+target_include_directories(Host
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Wu
+target_link_libraries(Dc
   PRIVATE OpenSSL::SSL
   PRIVATE OpenSSL::Crypto
   PRIVATE Threads::Threads
 )
 
-target_link_libraries(WuHost Wu)
+target_link_libraries(Host Dc)
 
-target_compile_options(Wu
+target_compile_options(Dc
   PRIVATE
   -Wall
   -fPIC
@@ -80,14 +80,14 @@ target_compile_options(Wu
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 )
 
-target_compile_options(WuHost
+target_compile_options(Host
   PRIVATE
   -Wall
   $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
   $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 )
 
-install(TARGETS Wu WuHost EXPORT WuTargets
+install(TARGETS Dc Host EXPORT Targets
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
@@ -95,19 +95,19 @@ install(TARGETS Wu WuHost EXPORT WuTargets
   PUBLIC_HEADER DESTINATION include
 )
 
-install(FILES Wu.h WuHost.h DESTINATION include)
+install(FILES src/Dc.h src/Host.h DESTINATION include)
 
-install(EXPORT WuTargets
-  FILE WuTargets.cmake
-  NAMESPACE Wu::
-  DESTINATION lib/cmake/Wu
+install(EXPORT Targets
+  FILE Targets.cmake
+  NAMESPACE Dc::
+  DESTINATION lib/cmake/Dc
 )
 
 add_executable(EchoServer examples/EchoServer.c)
 target_include_directories(EchoServer PUBLIC src/)
-target_link_libraries(EchoServer WuHost)
+target_link_libraries(EchoServer Host)
 
-set_target_properties(Wu WuHost EchoServer PROPERTIES
+set_target_properties(Dc Host EchoServer PROPERTIES
   CXX_STANDARD 11
   RUNTIME_OUTPUT_DIRECTORY ${EXAMPLES_DIR}
 )
@@ -125,8 +125,8 @@ if (WITH_TESTS)
   target_include_directories(FuzzSdp PUBLIC src/)
   target_include_directories(FuzzSctp PUBLIC src/)
   target_include_directories(FuzzStun PUBLIC src/)
-  target_link_libraries(FuzzSdp Wu)
-  target_link_libraries(FuzzSctp Wu)
-  target_link_libraries(FuzzStun Wu)
+  target_link_libraries(FuzzSdp Dc)
+  target_link_libraries(FuzzSctp Dc)
+  target_link_libraries(FuzzStun Dc)
   file(COPY test/data DESTINATION ${TESTS_DIR})
 endif()
