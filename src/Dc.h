@@ -7,9 +7,9 @@
 extern "C" {
 #endif
 
-#define WU_OK 0
-#define WU_ERROR 1
-#define WU_OUT_OF_MEMORY 2
+#define OK 0
+#define ERROR 1
+#define OUT_OF_MEMORY 2
 
 typedef struct Client Client;
 typedef struct Dc Dc;

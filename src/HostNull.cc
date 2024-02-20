@@ -2,7 +2,7 @@
 
 int32_t HostCreate(const char *, const char *, int32_t, Host **host) {
   *host = NULL;
-  return WU_OK;
+  return OK;
 }
 int32_t HostServe(Host *, Event *, int) { return 0; }
 void HostRemoveClient(Host *, Client *) {}

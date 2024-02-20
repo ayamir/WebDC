@@ -235,12 +235,12 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
   Host *ctx = (Host *)calloc(1, sizeof(Host));
 
   if (!ctx) {
-    return WU_OUT_OF_MEMORY;
+    return OUT_OF_MEMORY;
   }
 
   int32_t status = Create(hostAddr, port, maxClients, &ctx->dc);
 
-  if (status != WU_OK) {
+  if (status != OK) {
     free(ctx);
     return status;
   }
@@ -249,38 +249,38 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
 
   if (ctx->tcpfd == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   status = MakeNonBlocking(ctx->tcpfd);
   if (status == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   status = listen(ctx->tcpfd, SOMAXCONN);
   if (status == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   ctx->udpfd = CreateSocket(port, ST_UDP);
 
   if (ctx->udpfd == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   status = MakeNonBlocking(ctx->udpfd);
   if (status == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   ctx->epfd = epoll_create1(0);
   if (ctx->epfd == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   const int32_t maxEvents = 128;
@@ -288,7 +288,7 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
 
   if (!ctx->bufferPool) {
     HostDestroy(ctx);
-    return WU_OUT_OF_MEMORY;
+    return OUT_OF_MEMORY;
   }
 
   ConnectionBuffer *udpBuf = HostGetBuffer(ctx);
@@ -304,14 +304,14 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
   status = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->tcpfd, &event);
   if (status == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   event.data.ptr = udpBuf;
   status = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->udpfd, &event);
   if (status == -1) {
     HostDestroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   ctx->maxEvents = maxEvents;
@@ -319,7 +319,7 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
 
   if (!ctx->events) {
     HostDestroy(ctx);
-    return WU_OUT_OF_MEMORY;
+    return OUT_OF_MEMORY;
   }
 
   SetUserData(ctx->dc, ctx);
@@ -327,7 +327,7 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
 
   *host = ctx;
 
-  return WU_OK;
+  return OK;
 }
 
 void HostRemoveClient(Host *host, Client *client) {

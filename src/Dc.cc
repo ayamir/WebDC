@@ -550,14 +550,14 @@ int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
   Dc *ctx = (Dc *)calloc(1, sizeof(Dc));
 
   if (!ctx) {
-    return WU_OUT_OF_MEMORY;
+    return OUT_OF_MEMORY;
   }
 
   ctx->bp = (BarePool *)calloc(1, sizeof(BarePool));
 
   if (!ctx->bp) {
     Destroy(ctx);
-    return WU_OUT_OF_MEMORY;
+    return OUT_OF_MEMORY;
   }
 
   BarePoolInit(ctx->bp, 1 << 20);
@@ -572,7 +572,7 @@ int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
 
   if (!DcCryptoInit(ctx)) {
     Destroy(ctx);
-    return WU_ERROR;
+    return ERROR;
   }
 
   ctx->maxClients = maxClients <= 0 ? 256 : maxClients;
@@ -580,7 +580,7 @@ int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
   ctx->clients = (Client **)calloc(ctx->maxClients, sizeof(Client *));
 
   *dc = ctx;
-  return WU_OK;
+  return OK;
 }
 
 static void SendHeartbeat(Dc *dc, Client *client) {

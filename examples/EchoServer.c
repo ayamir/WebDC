@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
   Host *host = NULL;
 
   int32_t status = HostCreate(hostAddr, port, maxClients, &host);
-  if (status != WU_OK) {
+  if (status != OK) {
     printf("failed to create host\n");
     return 1;
   }
