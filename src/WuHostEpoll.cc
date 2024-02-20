@@ -195,7 +195,6 @@ int32_t WuHostServe(WuHost *host, WuEvent *evt, int timeout) {
         }
 
         WuConnectionBuffer *conn = HostGetBuffer(host);
-        ;
 
         if (conn) {
           conn->fd = infd;
