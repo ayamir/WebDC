@@ -1,4 +1,4 @@
-#include "WuHost.h"
+#include "Host.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,35 +13,35 @@ int main(int argc, char **argv) {
     port = argv[2];
   }
 
-  WuHost *host = NULL;
+  Host *host = NULL;
 
-  int32_t status = WuHostCreate(hostAddr, port, maxClients, &host);
-  if (status != WU_OK) {
+  int32_t status = HostCreate(hostAddr, port, maxClients, &host);
+  if (status != OK) {
     printf("failed to create host\n");
     return 1;
   }
 
   for (;;) {
-    WuEvent evt;
-    while (WuHostServe(host, &evt, 0)) {
+    Event evt;
+    while (HostServe(host, &evt, 0)) {
       switch (evt.type) {
-      case WuEvent_ClientJoin: {
+      case Event_ClientJoin: {
         printf("EchoServer: client join\n");
         break;
       }
-      case WuEvent_ClientLeave: {
+      case Event_ClientLeave: {
         printf("EchoServer: client leave\n");
-        WuHostRemoveClient(host, evt.client);
+        HostRemoveClient(host, evt.client);
         break;
       }
-      case WuEvent_TextData: {
+      case Event_TextData: {
         const char *text = (const char *)evt.data;
         int32_t length = evt.length;
-        WuHostSendText(host, evt.client, text, length);
+        HostSendText(host, evt.client, text, length);
         break;
       }
-      case WuEvent_BinaryData: {
-        WuHostSendBinary(host, evt.client, evt.data, evt.length);
+      case Event_BinaryData: {
+        HostSendBinary(host, evt.client, evt.data, evt.length);
         break;
       }
       default:

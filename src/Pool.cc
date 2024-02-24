@@ -1,12 +1,11 @@
-#include "WuPool.h"
-#include <assert.h>
+#include "Pool.h"
 #include <stdlib.h>
 
 struct BlockHeader {
   int32_t index;
 };
 
-struct WuPool {
+struct Pool {
   int32_t slotSize;
   int32_t numBytes;
   int32_t numBlocks;
@@ -15,8 +14,8 @@ struct WuPool {
   int32_t *freeIndices;
 };
 
-WuPool *WuPoolCreate(int32_t blockSize, int32_t numBlocks) {
-  WuPool *pool = (WuPool *)calloc(1, sizeof(WuPool));
+Pool *PoolCreate(int32_t blockSize, int32_t numBlocks) {
+  Pool *pool = (Pool *)calloc(1, sizeof(Pool));
 
   pool->slotSize = blockSize + sizeof(BlockHeader);
   pool->numBytes = pool->slotSize * numBlocks;
@@ -32,13 +31,13 @@ WuPool *WuPoolCreate(int32_t blockSize, int32_t numBlocks) {
   return pool;
 }
 
-void WuPoolDestroy(WuPool *pool) {
+void PoolDestroy(Pool *pool) {
   free(pool->memory);
   free(pool->freeIndices);
   free(pool);
 }
 
-void *WuPoolAcquire(WuPool *pool) {
+void *PoolAcquire(Pool *pool) {
   if (pool->freeIndicesCount == 0)
     return NULL;
 
@@ -54,7 +53,7 @@ void *WuPoolAcquire(WuPool *pool) {
   return userMem;
 }
 
-void WuPoolRelease(WuPool *pool, void *ptr) {
+void PoolRelease(Pool *pool, void *ptr) {
   uint8_t *mem = (uint8_t *)ptr - sizeof(BlockHeader);
   if (mem < pool->memory || mem >= pool->memory + pool->numBytes) {
     return;
