@@ -8,7 +8,11 @@ The core library (Dc) is platform independent. Refer to `HostEpoll` for linux-pl
 
 ## Example
 
-![image-20240220140659857](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240220140659857.png)
+The `EchoServer` is deployed behind Port Restricted Cone NAT and the Client is behind Full Cone NAT.
+
+![image-20240221215724821](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240221215724821.png)
+
+![image-20240221215854419](https://raw.githubusercontent.com/ayamir/blog-imgs/main/image-20240221215854419.png)
 
 ## Developing
 
