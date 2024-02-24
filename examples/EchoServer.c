@@ -1,3 +1,4 @@
+#include "Debug.hpp"
 #include "Host.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +18,7 @@ int main(int argc, char **argv) {
 
   int32_t status = HostCreate(hostAddr, port, maxClients, &host);
   if (status != OK) {
-    printf("failed to create host\n");
+    StdoutLog("failed to create host\n");
     return 1;
   }
 
@@ -26,11 +27,11 @@ int main(int argc, char **argv) {
     while (HostServe(host, &evt, 0)) {
       switch (evt.type) {
       case Event_ClientJoin: {
-        printf("EchoServer: client join\n");
+        StdoutLog("EchoServer: client join\n");
         break;
       }
       case Event_ClientLeave: {
-        printf("EchoServer: client leave\n");
+        StdoutLog("EchoServer: client leave\n");
         HostRemoveClient(host, evt.client);
         break;
       }

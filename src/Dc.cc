@@ -10,6 +10,7 @@
 #include "Sctp.h"
 #include "Sdp.h"
 #include "Stun.h"
+#include "src/Debug.hpp"
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -298,6 +299,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
           }
 
           SendSctp(dc, client, &response, &rc, 1);
+          StdoutLog("Received DCMessage_Open, send DCMessage_Ack");
         }
       } else if (dataChunk->protoId == DCProto_String) {
         Event evt;
@@ -350,6 +352,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.as.init.initialTsn = client->tsn;
 
       SendSctp(dc, client, &response, &rc, 1);
+      StdoutLog("Received Sctp Init, Send Sctp InitAck");
       break;
     } else if (chunk->type == Sctp_CookieEcho) {
       if (client->state < Client_SCTPEstablished) {
@@ -366,6 +369,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.length = SctpChunkLength(0);
 
       SendSctp(dc, client, &response, &rc, 1);
+      StdoutLog("Received CookieEcho, send Sctp CookieAck, Sctp connected!!!");
     } else if (chunk->type == Sctp_Heartbeat) {
       SctpPacket response;
       response.sourcePort = sctpPacket.destionationPort;
@@ -384,8 +388,10 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       SendSctp(dc, client, &response, &rc, 1);
     } else if (chunk->type == Sctp_HeartbeatAck) {
       client->ttl = kMaxClientTtl;
+      StdoutLog("Received Sctp HeartbeatAck, set client ttl to kMaxClientTtl");
     } else if (chunk->type == Sctp_Abort) {
       client->state = Client_WaitingRemoval;
+      StdoutLog("Received Sctp Abort, set client state WaitingRemoval");
       return;
     } else if (chunk->type == Sctp_Sack) {
       auto *sack = &chunk->as.sack;
@@ -401,6 +407,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
         fwdTsnChunk.length = SctpChunkLength(4);
         fwdTsnChunk.as.forwardTsn.newCumulativeTsn = client->tsn;
         SendSctp(dc, client, &fwdResponse, &fwdTsnChunk, 1);
+        StdoutLog("Received Sctp Sack, send forwardTsn");
       }
     }
   }
@@ -416,6 +423,7 @@ static void ReceiveDTLSPacket(Dc *dc, const uint8_t *data, size_t length,
   BIO_write(client->inBio, data, length);
 
   if (!SSL_is_init_finished(client->ssl)) {
+    StdoutLog("Do ssl handshake");
     int r = SSL_do_handshake(client->ssl);
 
     if (r <= 0) {
@@ -473,6 +481,7 @@ static void HandleStun(Dc *dc, const StunPacket *packet,
   client->address = *remote;
 
   dc->writeUdpData(stunResponse, serializedSize, client, dc->userData);
+  StdoutLog("Send Stun_SuccessResponse");
 }
 
 static void PurgeDeadClients(Dc *dc) {
@@ -597,6 +606,7 @@ static void SendHeartbeat(Dc *dc, Client *client) {
   rc.as.heartbeat.heartbeatInfoLen = sizeof(dc->time);
 
   SendSctp(dc, client, &packet, &rc, 1);
+  StdoutLog("Send Heartbeat Packet");
 }
 
 static void UpdateClients(Dc *dc) {

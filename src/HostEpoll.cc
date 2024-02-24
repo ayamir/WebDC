@@ -4,6 +4,7 @@
 #include "Pool.h"
 #include "String.h"
 #include "picohttpparser.h"
+#include "src/Debug.hpp"
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
@@ -123,6 +124,7 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
                          "\r\n%.*s",
                          sdp.sdpLength, sdp.sdpLength, sdp.sdp);
             SocketWrite(conn->fd, response, responseLength);
+            StdoutLog("Send SDP");
           } else if (sdp.status == SDPStatus_MaxClients) {
             SocketWrite(conn->fd, STRLIT(HTTP_UNAVAILABLE));
           } else if (sdp.status == SDPStatus_InvalidSDP) {
@@ -173,6 +175,7 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
     }
 
     if (host->tcpfd == c->fd) {
+      StdoutLog("Handle tcpfd");
       for (;;) {
         struct sockaddr_in inAddress;
         socklen_t inLength = sizeof(inAddress);
@@ -221,6 +224,7 @@ int32_t HostServe(Host *host, Event *evt, int timeout) {
       }
 
     } else {
+      StdoutLog("Handle http request");
       HandleHttpRequest(host, c);
     }
   }

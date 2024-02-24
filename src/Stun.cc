@@ -2,6 +2,7 @@
 #include "BufferOp.hpp"
 #include "CRC32.h"
 #include "Crypto.h"
+#include "src/Debug.hpp"
 #include <arpa/inet.h>
 #include <string.h>
 
@@ -18,6 +19,7 @@ bool ParseStun(const uint8_t *src, int32_t len, StunPacket *packet) {
   if (packet->type != Stun_BindingRequest) {
     return false;
   }
+  StdoutLog("Received Stun_BindingRequest");
 
   src += ReadScalarSwapped(src, &packet->length);
 
