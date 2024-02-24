@@ -22,7 +22,7 @@ bash ./generate_clangd.sh # generate .clangd file for clangd-based editor
 
 ## Building
 
-Build passed on `openssl` `1.1.1w`.
+Build passed on `Ubuntu18.04` with `openssl` `1.1.1`.
 
 ```bash
 mkdir build && cd build
@@ -33,7 +33,3 @@ make -j
 ### Host platforms
 
 - Linux (epoll)
-
-### Issues
-
-- Firefox doesn't connect to a server running on localhost. Bind a different interface.
