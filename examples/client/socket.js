@@ -44,7 +44,7 @@ Socket.prototype.beginConnection = function () {
     console.log(evt);
   };
 
-  this.channel = peer.createDataChannel("webudp", {
+  this.channel = peer.createDataChannel("webdc", {
     ordered: false,
     maxRetransmits: 0,
   });

@@ -7,7 +7,7 @@
   <script>
     function Start() {
       let PORT = 9555;
-      let NUM_PACKETS = 100;
+      let NUM_PACKETS = 10;
       let SEND_INTERVAL = 500;
       let packetNumber = 0;
 
@@ -16,9 +16,11 @@
       );
       socket.onopen = function () {
         setInterval(function () {
-          let payload = "packet-" + packetNumber;
-          socket.send(payload);
-          packetNumber++;
+          if (packetNumber < NUM_PACKETS) {
+            let payload = "packet-" + packetNumber;
+            socket.send(payload);
+            packetNumber++;
+          }
         }, SEND_INTERVAL);
       };
 
