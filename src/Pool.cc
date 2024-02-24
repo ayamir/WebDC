@@ -1,4 +1,5 @@
 #include "Pool.h"
+#include <assert.h>
 #include <stdlib.h>
 
 struct BlockHeader {
@@ -55,9 +56,7 @@ void *PoolAcquire(Pool *pool) {
 
 void PoolRelease(Pool *pool, void *ptr) {
   uint8_t *mem = (uint8_t *)ptr - sizeof(BlockHeader);
-  if (mem < pool->memory || mem >= pool->memory + pool->numBytes) {
-    return;
-  }
+  assert(mem >= pool->memory && mem < pool->memory + pool->numBytes);
   BlockHeader *header = (BlockHeader *)mem;
   pool->freeIndices[pool->freeIndicesCount++] = header->index;
 }
