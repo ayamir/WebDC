@@ -6,16 +6,16 @@
 #include <stdio.h>
 #include <string.h>
 
-int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpPacket *packet,
+int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpHeader *header,
                         SctpChunk *chunks, size_t maxChunks, size_t *nChunk) {
   if (len < 16) {
     return 0;
   }
 
-  int32_t offset = ReadScalarSwapped(buf, &packet->sourcePort);
-  offset += ReadScalarSwapped(buf + offset, &packet->destionationPort);
-  offset += ReadScalarSwapped(buf + offset, &packet->verificationTag);
-  offset += ReadScalarSwapped(buf + offset, &packet->checkSum);
+  int32_t offset = ReadScalarSwapped(buf, &header->sourcePort);
+  offset += ReadScalarSwapped(buf + offset, &header->destionationPort);
+  offset += ReadScalarSwapped(buf + offset, &header->verificationTag);
+  offset += ReadScalarSwapped(buf + offset, &header->checkSum);
 
   int32_t left = len - offset;
 
@@ -66,6 +66,8 @@ int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpPacket *packet,
       chunkOffset += ReadScalarSwapped(buf + offset + chunkOffset,
                                        &chunk->as.init.numInboundStreams);
       ReadScalarSwapped(buf + offset + chunkOffset, &chunk->as.init.initialTsn);
+    } else if (chunk->type == Sctp_CookieEcho) {
+      ReadScalarSwapped(buf + offset, &chunk->as.cookieEcho.cookie);
     }
 
     int32_t valueLength = chunk->length - 4;
@@ -77,7 +79,7 @@ int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpPacket *packet,
   return 1;
 }
 
-size_t SerializeSctpPacket(const SctpPacket *packet, const SctpChunk *chunks,
+size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
                            size_t numChunks, uint8_t *dst, size_t dstLen) {
   size_t offset = WriteScalar(dst, htons(packet->sourcePort));
   offset += WriteScalar(dst + offset, htons(packet->destionationPort));
@@ -115,11 +117,12 @@ size_t SerializeSctpPacket(const SctpPacket *packet, const SctpChunk *chunks,
       offset += WriteScalar(dst + offset, htonl(chunk->as.init.initialTsn));
 
       offset += WriteScalar(dst + offset, htons(Sctp_StateCookie));
-      offset += WriteScalar(dst + offset, htons(8));
-      offset += WriteScalar(dst + offset, htonl(0xB00B1E5));
+      offset +=
+          WriteScalar(dst + offset, htons(SctpChunkLength(sizeof(uint32_t))));
+      // TODO: generate state cookie
+      offset += WriteScalar(dst + offset, htonl(kSctpCookieValue));
       offset += WriteScalar(dst + offset, htons(Sctp_ForwardTsn));
       offset += WriteScalar(dst + offset, htons(4));
-
       break;
     }
     case Sctp_Sack: {

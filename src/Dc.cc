@@ -47,12 +47,28 @@ static void WriteNothing(const uint8_t *, size_t, const Client *, void *) {}
 
 enum DataChannelMessageType { DCMessage_Ack = 0x02, DCMessage_Open = 0x03 };
 
-enum DataChanProtoIdentifier {
+enum DataChannelProtoIdentifier {
   DCProto_Control = 50,
   DCProto_String = 51,
   DCProto_Binary = 53,
   DCProto_EmptyString = 56,
   DCProto_EmptyBinary = 57
+};
+
+enum DataChannelChannelType {
+  DC_Reliable = 0x00,
+  DC_ReliableUnordered = 0x80,
+  DC_PartialReliableRexmit = 0x01,
+  DC_PartialReliableRexmitUnordered = 0x81,
+  DC_PartialReliableTimed = 0x02,
+  DC_PartialReliableTimedUnordered = 0x82,
+};
+
+enum DataChannelPriorityValue {
+  DCPriority_BelowNormal = 0x80,
+  DCPriority_Normal = 0x100,
+  DCPriority_High = 0x200,
+  DCPriority_ExtraHigh = 0x400
 };
 
 struct DataChannelPacket {
@@ -77,8 +93,11 @@ enum ClientState {
 
 static int32_t ParseDataChannelControlPacket(const uint8_t *buf, size_t len,
                                              DataChannelPacket *packet) {
-  ReadScalarSwapped(buf, &packet->messageType);
-  return 0;
+  int32_t offset = ReadScalarSwapped(buf, &packet->messageType);
+  offset += ReadScalarSwapped(buf + offset, &packet->as.open.channelType);
+  offset += ReadScalarSwapped(buf + offset, &packet->as.open.priority);
+  offset += ReadScalarSwapped(buf + offset, &packet->as.open.reliability);
+  return 1;
 }
 
 void ReportError(Dc *dc, const char *description) {
@@ -143,7 +162,7 @@ static void ClientStart(const Dc *dc, Client *client) {
   SSL_set_mtu(client->ssl, kDefaultMTU);
 }
 
-static void SendSctp(const Dc *dc, Client *client, const SctpPacket *packet,
+static void SendSctp(const Dc *dc, Client *client, const SctpHeader *packet,
                      const SctpChunk *chunks, int32_t numChunks);
 
 static Client *NewClient(Dc *dc) {
@@ -162,7 +181,7 @@ static Client *NewClient(Dc *dc) {
 static void PushEvent(Dc *dc, Event evt) { QueuePush(dc->pendingEvents, &evt); }
 
 static void SendSctpShutdown(Dc *dc, Client *client) {
-  SctpPacket response;
+  SctpHeader response;
   response.sourcePort = client->localSctpPort;
   response.destionationPort = client->remoteSctpPort;
   response.verificationTag = client->sctpVerificationTag;
@@ -236,7 +255,7 @@ static void TLSSend(const Dc *dc, Client *client, const void *data,
   ClientSendPendingDTLS(dc, client);
 }
 
-static void SendSctp(const Dc *dc, Client *client, const SctpPacket *packet,
+static void SendSctp(const Dc *dc, Client *client, const SctpHeader *packet,
                      const SctpChunk *chunks, int32_t numChunks) {
   uint8_t outBuffer[4096];
   memset(outBuffer, 0, sizeof(outBuffer));
@@ -249,7 +268,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
                        int32_t len) {
   const size_t maxChunks = 8;
   SctpChunk chunks[maxChunks];
-  SctpPacket sctpPacket;
+  SctpHeader sctpPacket;
   size_t nChunk = 0;
 
   if (!ParseSctpPacket(buf, len, &sctpPacket, chunks, maxChunks, &nChunk)) {
@@ -272,7 +291,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
         if (packet.messageType == DCMessage_Open) {
           client->remoteSctpPort = sctpPacket.sourcePort;
           uint8_t outType = DCMessage_Ack;
-          SctpPacket response;
+          SctpHeader response;
           response.sourcePort = sctpPacket.destionationPort;
           response.destionationPort = sctpPacket.sourcePort;
           response.verificationTag = client->sctpVerificationTag;
@@ -299,7 +318,9 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
           }
 
           SendSctp(dc, client, &response, &rc, 1);
-          StdoutLog("Received DCMessage_Open, send DCMessage_Ack");
+          StdoutLog("Received DCMessage_Open, send DCMessage_Ack, DataChannel "
+                    "with streamId=%u opened!!!",
+                    chunkData->streamId);
         }
       } else if (dataChunk->protoId == DCProto_String) {
         Event evt;
@@ -317,7 +338,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
         PushEvent(dc, evt);
       }
 
-      SctpPacket sack;
+      SctpHeader sack;
       sack.sourcePort = sctpPacket.destionationPort;
       sack.destionationPort = sctpPacket.sourcePort;
       sack.verificationTag = client->sctpVerificationTag;
@@ -333,7 +354,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
 
       SendSctp(dc, client, &sack, &rc, 1);
     } else if (chunk->type == Sctp_Init) {
-      SctpPacket response;
+      SctpHeader response;
       response.sourcePort = sctpPacket.destionationPort;
       response.destionationPort = sctpPacket.sourcePort;
       response.verificationTag = chunk->as.init.initiateTag;
@@ -352,26 +373,40 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.as.init.initialTsn = client->tsn;
 
       SendSctp(dc, client, &response, &rc, 1);
-      StdoutLog("Received Sctp Init, Send Sctp InitAck");
+      StdoutLog("Received Sctp Init, Send Sctp InitAck, numInboundStreams=%u, "
+                "numOutboundStreams=%u",
+                rc.as.init.numInboundStreams, rc.as.init.numOutboundStreams);
       break;
     } else if (chunk->type == Sctp_CookieEcho) {
-      if (client->state < Client_SCTPEstablished) {
-        client->state = Client_SCTPEstablished;
-      }
-      SctpPacket response;
+      SctpHeader response;
       response.sourcePort = sctpPacket.destionationPort;
       response.destionationPort = sctpPacket.sourcePort;
       response.verificationTag = client->sctpVerificationTag;
 
-      SctpChunk rc;
-      rc.type = Sctp_CookieAck;
-      rc.flags = 0;
-      rc.length = SctpChunkLength(0);
-
-      SendSctp(dc, client, &response, &rc, 1);
-      StdoutLog("Received CookieEcho, send Sctp CookieAck, Sctp connected!!!");
+      uint32_t cookieValue = chunk->as.cookieEcho.cookie;
+      if (cookieValue != kSctpCookieValue) {
+        SctpChunk rc;
+        rc.type = Sctp_Error;
+        rc.flags = 0;
+        rc.length = SctpChunkLength(2 * sizeof(uint16_t));
+        rc.as.error.causeCode = Sctp_StaleCookieError;
+        rc.as.error.causeLength = 8;
+        SendSctp(dc, client, &response, &rc, 1);
+        StdoutLog("Received CookieEcho but with StaleCookieError");
+      } else {
+        if (client->state < Client_SCTPEstablished) {
+          client->state = Client_SCTPEstablished;
+        }
+        SctpChunk rc;
+        rc.type = Sctp_CookieAck;
+        rc.flags = 0;
+        rc.length = SctpChunkLength(0);
+        SendSctp(dc, client, &response, &rc, 1);
+        StdoutLog(
+            "Received CookieEcho, send Sctp CookieAck, Sctp connected!!!");
+      }
     } else if (chunk->type == Sctp_Heartbeat) {
-      SctpPacket response;
+      SctpHeader response;
       response.sourcePort = sctpPacket.destionationPort;
       response.destionationPort = sctpPacket.sourcePort;
       response.verificationTag = client->sctpVerificationTag;
@@ -396,7 +431,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
     } else if (chunk->type == Sctp_Sack) {
       auto *sack = &chunk->as.sack;
       if (sack->numGapAckBlocks > 0) {
-        SctpPacket fwdResponse;
+        SctpHeader fwdResponse;
         fwdResponse.sourcePort = sctpPacket.destionationPort;
         fwdResponse.destionationPort = sctpPacket.sourcePort;
         fwdResponse.verificationTag = client->sctpVerificationTag;
@@ -593,7 +628,7 @@ int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
 }
 
 static void SendHeartbeat(Dc *dc, Client *client) {
-  SctpPacket packet;
+  SctpHeader packet;
   packet.sourcePort = dc->port;
   packet.destionationPort = client->remoteSctpPort;
   packet.verificationTag = client->sctpVerificationTag;
@@ -642,12 +677,12 @@ int32_t Update(Dc *dc, Event *evt) {
 }
 
 static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
-                        int32_t length, DataChanProtoIdentifier proto) {
+                        int32_t length, DataChannelProtoIdentifier proto) {
   if (client->state < Client_DataChannelOpen) {
     return -1;
   }
 
-  SctpPacket packet;
+  SctpHeader packet;
   packet.sourcePort = dc->port;
   packet.destionationPort = client->remoteSctpPort;
   packet.verificationTag = client->sctpVerificationTag;

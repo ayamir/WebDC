@@ -5,6 +5,7 @@
 
 const uint32_t kSctpDefaultBufferSpace = 1 << 18;
 const uint32_t kSctpMinInitAckLength = 32;
+const uint32_t kSctpCookieValue = 0xB00B1E5;
 
 enum SctpFlag {
   SctpFlagEndFragment = 0x01,
@@ -24,9 +25,15 @@ enum SctpChunkType {
   Sctp_HeartbeatAck = 0x05,
   Sctp_Abort = 0x06,
   Sctp_Shutdown = 0x07,
+  Sctp_ShutdownAck = 0x08,
+  Sctp_Error = 0x09,
   Sctp_CookieEcho = 0x0A,
   Sctp_CookieAck = 0x0B,
   SctpChunk_ForwardTsn = 0xC0
+};
+
+enum SctpErrorCauseCode {
+  Sctp_StaleCookieError = 0x03,
 };
 
 enum SctpParamType {
@@ -62,6 +69,10 @@ struct SctpChunk {
     } init;
 
     struct {
+      uint32_t cookie;
+    } cookieEcho;
+
+    struct {
       int32_t heartbeatInfoLen;
       const uint8_t *heartbeatInfo;
     } heartbeat;
@@ -80,20 +91,26 @@ struct SctpChunk {
     struct {
       uint32_t newCumulativeTsn;
     } forwardTsn;
+
+    struct {
+      uint16_t causeCode;
+      uint16_t causeLength;
+      // don't care causeInfo
+    } error;
   } as;
 };
 
-struct SctpPacket {
+struct SctpHeader {
   uint16_t sourcePort;
   uint16_t destionationPort;
   uint32_t verificationTag;
   uint32_t checkSum;
 };
 
-int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpPacket *packet,
+int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpHeader *packet,
                         SctpChunk *chunks, size_t maxChunks, size_t *nChunk);
 
-size_t SerializeSctpPacket(const SctpPacket *packet, const SctpChunk *chunks,
+size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
                            size_t numChunks, uint8_t *dst, size_t dstLen);
 
 int32_t SctpDataChunkLength(int32_t userDataLength);
