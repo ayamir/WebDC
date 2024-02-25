@@ -30,6 +30,8 @@ cmake ..
 make -j
 ```
 
-### Host platforms
+## Todo
 
-- Linux (epoll)
+[ ] ordered transmission
+[ ] reliable transmission
+[ ] multi-stream multiplexing

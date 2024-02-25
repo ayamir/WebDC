@@ -659,7 +659,8 @@ static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
 
   auto *chunkData = &rc.as.data;
   chunkData->tsn = client->tsn++;
-  chunkData->streamId = 0; // TODO: Does it matter?
+  // TODO: expose stream identifier to support multi-stream multiplexing
+  chunkData->streamId = 0;
   chunkData->streamSeq = 0;
   chunkData->protoId = proto;
   chunkData->userData = data;
