@@ -32,6 +32,6 @@ make -j
 
 ## Todo
 
-[ ] ordered transmission
-[ ] reliable transmission
-[ ] multi-stream multiplexing
+- [ ] ordered transmission
+- [ ] reliable transmission
+- [ ] multi-stream multiplexing
