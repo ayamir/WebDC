@@ -152,6 +152,12 @@ size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
       offset += WriteScalar(dst + offset, htonl(forwardTsn->newCumulativeTsn));
       break;
     }
+    case Sctp_Error: {
+      auto *error = &chunk->as.error;
+      offset += WriteScalar(dst + offset, htonl(error->causeCode));
+      offset += WriteScalar(dst + offset, htonl(error->causeLength));
+      break;
+    }
     default:
       break;
     }
