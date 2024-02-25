@@ -102,6 +102,7 @@ size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
       offset += WriteScalar(dst + offset, htons(dc->streamId));
       offset += WriteScalar(dst + offset, htons(dc->streamSeq));
       offset += WriteScalar(dst + offset, htonl(dc->protoId));
+      // TODO: fragmentation
       memcpy(dst + offset, dc->userData, dc->userDataLength);
       int32_t pad = PadSize(dc->userDataLength, 4);
       offset += dc->userDataLength + pad;

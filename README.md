@@ -32,6 +32,7 @@ make -j
 
 ## Todo
 
+- [ ] user data fragmentation
 - [ ] ordered transmission
 - [ ] reliable transmission
 - [ ] multi-stream multiplexing
