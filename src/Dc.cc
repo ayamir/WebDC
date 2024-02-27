@@ -373,9 +373,7 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       rc.as.init.initialTsn = client->tsn;
 
       SendSctp(dc, client, &response, &rc, 1);
-      StdoutLog("Received Sctp Init, Send Sctp InitAck, numInboundStreams=%u, "
-                "numOutboundStreams=%u",
-                rc.as.init.numInboundStreams, rc.as.init.numOutboundStreams);
+      StdoutLog("Received Sctp Init, Send Sctp InitAck");
       break;
     } else if (chunk->type == Sctp_CookieEcho) {
       SctpHeader response;
