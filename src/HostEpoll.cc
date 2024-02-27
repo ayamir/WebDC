@@ -134,6 +134,7 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
           }
 
           close(conn->fd);
+          epoll_ctl(host->epfd, EPOLL_CTL_DEL, conn->fd, NULL);
           HostReclaimBuffer(host, conn);
         }
       }
@@ -141,12 +142,14 @@ static void HandleHttpRequest(Host *host, ConnectionBuffer *conn) {
       return;
     } else if (parseStatus == -1) {
       close(conn->fd);
+      epoll_ctl(host->epfd, EPOLL_CTL_DEL, conn->fd, NULL);
       HostReclaimBuffer(host, conn);
       return;
     } else {
       if (conn->size == kMaxHttpRequestLength) {
         SocketWrite(conn->fd, STRLIT(HTTP_BAD_REQUEST));
         close(conn->fd);
+        epoll_ctl(host->epfd, EPOLL_CTL_DEL, conn->fd, NULL);
         HostReclaimBuffer(host, conn);
         return;
       }
@@ -302,9 +305,9 @@ int32_t HostCreate(const char *hostAddr, const char *port, int32_t maxClients,
   tcpBuf->fd = ctx->tcpfd;
 
   struct epoll_event event;
-  event.data.ptr = tcpBuf;
   event.events = EPOLLIN | EPOLLET;
 
+  event.data.ptr = tcpBuf;
   status = epoll_ctl(ctx->epfd, EPOLL_CTL_ADD, ctx->tcpfd, &event);
   if (status == -1) {
     HostDestroy(ctx);
