@@ -14,6 +14,7 @@
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <stdint.h>
 #include <string.h>
 
 struct Dc {
@@ -674,32 +675,85 @@ int32_t Update(Dc *dc, Event *evt) {
   return 0;
 }
 
+struct SctpAssembleContext {
+  Dc *dc;
+  Client *client;
+  const uint8_t *data;
+  int32_t length;
+  DataChannelProtoIdentifier proto;
+  bool isBegin;
+  bool isEnd;
+  SctpHeader *packet;
+  SctpChunk *rc;
+  SctpAssembleContext(Dc *dc, Client *client, const uint8_t *data,
+                      int32_t length, DataChannelProtoIdentifier proto,
+                      bool isBegin, bool isEnd, SctpHeader *packet,
+                      SctpChunk *rc)
+      : dc(dc), client(client), data(data), length(length), proto(proto),
+        isBegin(isBegin), isEnd(isEnd), packet(packet), rc(rc) {}
+  SctpAssembleContext(const SctpAssembleContext &other) = delete;
+};
+
+static void AssembleSctpPacket(SctpAssembleContext *assembleCtx) {
+  assembleCtx->packet->sourcePort = assembleCtx->dc->port;
+  assembleCtx->packet->destinationPort = assembleCtx->client->remoteSctpPort;
+  assembleCtx->packet->verificationTag =
+      assembleCtx->client->sctpVerificationTag;
+
+  auto fragmentFlagsGenerator = [&](bool isBegin, bool isEnd) -> uint8_t {
+    auto beginFlag = SctpFlagBeginFragment & isBegin;
+    auto endFlag = SctpFlagEndFragment & isEnd;
+    return beginFlag | endFlag;
+  };
+  assembleCtx->rc->flags =
+      fragmentFlagsGenerator(assembleCtx->isBegin, assembleCtx->isEnd);
+  assembleCtx->rc->type = Sctp_Data;
+  assembleCtx->rc->length = SctpDataChunkLength(assembleCtx->length);
+
+  auto *chunkData = &assembleCtx->rc->as.data;
+  chunkData->tsn = assembleCtx->client->tsn++;
+  // TODO: expose stream identifier to support multi-stream multiplexing
+  chunkData->streamId = 0;
+  chunkData->streamSeq = 0;
+  chunkData->protoId = assembleCtx->proto;
+  chunkData->userData = assembleCtx->data;
+  chunkData->userDataLength = assembleCtx->length;
+}
+
+static void SendSctpDataPacket(Dc *dc, Client *client, const uint8_t *data,
+                               int32_t length, DataChannelProtoIdentifier proto,
+                               bool isBegin, bool isEnd) {
+  SctpHeader packet;
+  SctpChunk rc;
+  SctpAssembleContext assembleCtx{
+      dc, client, data, length, proto, isBegin, isEnd, &packet, &rc,
+  };
+  AssembleSctpPacket(&assembleCtx);
+  SendSctp(dc, client, &packet, &rc, 1);
+}
+
 static int32_t SendData(Dc *dc, Client *client, const uint8_t *data,
                         int32_t length, DataChannelProtoIdentifier proto) {
   if (client->state < Client_DataChannelOpen) {
     return -1;
   }
 
-  SctpHeader packet;
-  packet.sourcePort = dc->port;
-  packet.destionationPort = client->remoteSctpPort;
-  packet.verificationTag = client->sctpVerificationTag;
+  int32_t packetNum = 1;
+  if (length > kDefaultMTU) {
+    packetNum += length / kDefaultMTU;
+  }
 
-  SctpChunk rc;
-  rc.type = Sctp_Data;
-  rc.flags = kSctpFlagCompleteUnreliable;
-  rc.length = SctpDataChunkLength(length);
-
-  auto *chunkData = &rc.as.data;
-  chunkData->tsn = client->tsn++;
-  // TODO: expose stream identifier to support multi-stream multiplexing
-  chunkData->streamId = 0;
-  chunkData->streamSeq = 0;
-  chunkData->protoId = proto;
-  chunkData->userData = data;
-  chunkData->userDataLength = length;
-
-  SendSctp(dc, client, &packet, &rc, 1);
+  if (packetNum == 1) {
+    SendSctpDataPacket(dc, client, data, length, proto, true, true);
+  } else {
+    // begin packet
+    SendSctpDataPacket(dc, client, data, length, proto, true, false);
+    for (int i = 1; i < packetNum - 1; i++) {
+      SendSctpDataPacket(dc, client, data, length, proto, false, false);
+    }
+    // end packet
+    SendSctpDataPacket(dc, client, data, length, proto, false, false);
+  }
   return 0;
 }
 
