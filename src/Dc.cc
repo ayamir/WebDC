@@ -183,7 +183,7 @@ static void PushEvent(Dc *dc, Event evt) { QueuePush(dc->pendingEvents, &evt); }
 static void SendSctpShutdown(Dc *dc, Client *client) {
   SctpHeader response;
   response.sourcePort = client->localSctpPort;
-  response.destionationPort = client->remoteSctpPort;
+  response.destinationPort = client->remoteSctpPort;
   response.verificationTag = client->sctpVerificationTag;
 
   SctpChunk rc;
@@ -292,8 +292,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
           client->remoteSctpPort = sctpPacket.sourcePort;
           uint8_t outType = DCMessage_Ack;
           SctpHeader response;
-          response.sourcePort = sctpPacket.destionationPort;
-          response.destionationPort = sctpPacket.sourcePort;
+          response.sourcePort = sctpPacket.destinationPort;
+          response.destinationPort = sctpPacket.sourcePort;
           response.verificationTag = client->sctpVerificationTag;
 
           SctpChunk rc;
@@ -339,8 +339,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       }
 
       SctpHeader sack;
-      sack.sourcePort = sctpPacket.destionationPort;
-      sack.destionationPort = sctpPacket.sourcePort;
+      sack.sourcePort = sctpPacket.destinationPort;
+      sack.destinationPort = sctpPacket.sourcePort;
       sack.verificationTag = client->sctpVerificationTag;
 
       SctpChunk rc;
@@ -355,8 +355,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       SendSctp(dc, client, &sack, &rc, 1);
     } else if (chunk->type == Sctp_Init) {
       SctpHeader response;
-      response.sourcePort = sctpPacket.destionationPort;
-      response.destionationPort = sctpPacket.sourcePort;
+      response.sourcePort = sctpPacket.destinationPort;
+      response.destinationPort = sctpPacket.sourcePort;
       response.verificationTag = chunk->as.init.initiateTag;
       client->sctpVerificationTag = response.verificationTag;
       client->remoteTsn = chunk->as.init.initialTsn - 1;
@@ -377,8 +377,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       break;
     } else if (chunk->type == Sctp_CookieEcho) {
       SctpHeader response;
-      response.sourcePort = sctpPacket.destionationPort;
-      response.destionationPort = sctpPacket.sourcePort;
+      response.sourcePort = sctpPacket.destinationPort;
+      response.destinationPort = sctpPacket.sourcePort;
       response.verificationTag = client->sctpVerificationTag;
 
       uint32_t cookieValue = chunk->as.cookieEcho.cookie;
@@ -405,8 +405,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       }
     } else if (chunk->type == Sctp_Heartbeat) {
       SctpHeader response;
-      response.sourcePort = sctpPacket.destionationPort;
-      response.destionationPort = sctpPacket.sourcePort;
+      response.sourcePort = sctpPacket.destinationPort;
+      response.destinationPort = sctpPacket.sourcePort;
       response.verificationTag = client->sctpVerificationTag;
 
       SctpChunk rc;
@@ -430,8 +430,8 @@ static void HandleSctp(Dc *dc, Client *client, const uint8_t *buf,
       auto *sack = &chunk->as.sack;
       if (sack->numGapAckBlocks > 0) {
         SctpHeader fwdResponse;
-        fwdResponse.sourcePort = sctpPacket.destionationPort;
-        fwdResponse.destionationPort = sctpPacket.sourcePort;
+        fwdResponse.sourcePort = sctpPacket.destinationPort;
+        fwdResponse.destinationPort = sctpPacket.sourcePort;
         fwdResponse.verificationTag = client->sctpVerificationTag;
 
         SctpChunk fwdTsnChunk;
@@ -628,7 +628,7 @@ int32_t Create(const char *host, const char *port, int maxClients, Dc **dc) {
 static void SendHeartbeat(Dc *dc, Client *client) {
   SctpHeader packet;
   packet.sourcePort = dc->port;
-  packet.destionationPort = client->remoteSctpPort;
+  packet.destinationPort = client->remoteSctpPort;
   packet.verificationTag = client->sctpVerificationTag;
 
   SctpChunk rc;

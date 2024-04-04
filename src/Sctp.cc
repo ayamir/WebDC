@@ -13,7 +13,7 @@ int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpHeader *header,
   }
 
   int32_t offset = ReadScalarSwapped(buf, &header->sourcePort);
-  offset += ReadScalarSwapped(buf + offset, &header->destionationPort);
+  offset += ReadScalarSwapped(buf + offset, &header->destinationPort);
   offset += ReadScalarSwapped(buf + offset, &header->verificationTag);
   offset += ReadScalarSwapped(buf + offset, &header->checkSum);
 
@@ -82,7 +82,7 @@ int32_t ParseSctpPacket(const uint8_t *buf, size_t len, SctpHeader *header,
 size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
                            size_t numChunks, uint8_t *dst, size_t dstLen) {
   size_t offset = WriteScalar(dst, htons(packet->sourcePort));
-  offset += WriteScalar(dst + offset, htons(packet->destionationPort));
+  offset += WriteScalar(dst + offset, htons(packet->destinationPort));
   offset += WriteScalar(dst + offset, htonl(packet->verificationTag));
 
   size_t crcOffset = offset;
@@ -102,7 +102,6 @@ size_t SerializeSctpPacket(const SctpHeader *packet, const SctpChunk *chunks,
       offset += WriteScalar(dst + offset, htons(dc->streamId));
       offset += WriteScalar(dst + offset, htons(dc->streamSeq));
       offset += WriteScalar(dst + offset, htonl(dc->protoId));
-      // TODO: fragmentation
       memcpy(dst + offset, dc->userData, dc->userDataLength);
       int32_t pad = PadSize(dc->userDataLength, 4);
       offset += dc->userDataLength + pad;

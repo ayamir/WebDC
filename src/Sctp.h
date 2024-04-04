@@ -102,7 +102,7 @@ struct SctpChunk {
 
 struct SctpHeader {
   uint16_t sourcePort;
-  uint16_t destionationPort;
+  uint16_t destinationPort;
   uint32_t verificationTag;
   uint32_t checkSum;
 };
